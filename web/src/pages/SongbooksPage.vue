@@ -1,39 +1,48 @@
 <script setup>
-import { onMounted, ref } from 'vue'
-import { api } from '../api'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useSessionStore } from '../stores/session'
+import SongSearch from '../components/SongSearch.vue'
+import SongbookManager from '../components/SongbookManager.vue'
+import ModuleManager from '../components/ModuleManager.vue'
+import PublicCatalog from '../components/PublicCatalog.vue'
 
+const route = useRoute()
 const session = useSessionStore()
-const books = ref([])
-const error = ref('')
-const loading = ref(true)
+const tab = ref(route.meta.catalog ? 'catalog' : 'search')
 
-onMounted(async () => {
-  const spaces = session.spaces.length
-    ? session.spaces
-    : (session.dimensionId ? [{ id: session.dimensionId }] : [])
-  try {
-    const lists = await Promise.all(spaces.map((space) =>
-      api(`/dimensions/${space.id}/songbooks`, { token: session.token }),
-    ))
-    books.value = lists.flat().filter((book) => !book.hidden)
-  } catch (err) {
-    error.value = err.message
-  } finally {
-    loading.value = false
-  }
+const tabs = computed(() => {
+  const all = [
+    { id: 'search', label: 'Поиск' },
+    { id: 'books', label: 'Мои сборники' },
+    { id: 'modules', label: 'Модули Библии' },
+    { id: 'catalog', label: 'Общий каталог' },
+  ]
+  return session.token ? all : all.filter((item) => item.id === 'catalog')
+})
+
+watch(() => route.fullPath, () => {
+  if (!session.token) tab.value = 'catalog'
+  else if (route.meta.catalog) tab.value = 'catalog'
 })
 </script>
 
 <template>
-  <h1>Сборники</h1>
-  <p v-if="error" class="error">{{ error }}</p>
-  <p v-else-if="loading" class="empty">Загрузка…</p>
-  <p v-else-if="!books.length" class="empty">Сборников пока нет.</p>
-  <ul v-else class="plain">
-    <li v-for="book in books" :key="book.id">
-      <strong>{{ book.title || book.short_name || book.fbid }}</strong>
-      <span v-if="book.short_name && book.title"> · {{ book.short_name }}</span>
-    </li>
-  </ul>
+  <h1>Сборники и поиск</h1>
+  <div class="tabs" role="tablist">
+    <button
+      v-for="item in tabs"
+      :key="item.id"
+      type="button"
+      role="tab"
+      class="tab"
+      :class="{ on: tab === item.id }"
+      :aria-selected="tab === item.id"
+      @click="tab = item.id"
+    >{{ item.label }}</button>
+  </div>
+  <SongSearch v-if="tab === 'search'" :token="session.token" />
+  <SongbookManager v-else-if="tab === 'books'" :dimension-id="session.currentId" />
+  <ModuleManager v-else-if="tab === 'modules'" :dimension-id="session.currentId" />
+  <PublicCatalog v-else :guest="!session.token" @switch="tab = $event" />
 </template>

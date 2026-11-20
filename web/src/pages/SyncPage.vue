@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { explain } from '../api'
 import { useSyncStore } from '../stores/sync'
 
 const route = useRoute()
@@ -22,14 +23,14 @@ function pluralChanges(n) {
 }
 
 function songText(song) {
-  if (!song) return 'нет'
+  if (!song) return 'нет текста'
   const parts = (song.parts || []).map((part) => part.text).filter(Boolean)
-  return [song.title, ...parts].filter(Boolean).join('\n') || 'нет'
+  return [song.title, ...parts].filter(Boolean).join('\n') || 'нет текста'
 }
 
 function answerLabel(answer) {
-  if (answer === 'server') return 'серверная версия'
-  if (answer === 'new') return 'новая песня'
+  if (answer === 'server') return 'оставить версию сервера'
+  if (answer === 'new') return 'сохранить как новую песню'
   return ''
 }
 
@@ -39,74 +40,79 @@ watch(() => route.params.id, (id) => sync.load(id))
 
 <template>
   <div class="page-head">
-    <h1>Состояние синхронизации</h1>
-    <router-link class="back" :to="`/dimensions/${route.params.id}`">← К пространству</router-link>
+    <h1>Синхронизация</h1>
+    <router-link class="back" :to="`/dimensions/${route.params.id}`">К общине</router-link>
   </div>
+  <p class="hint">
+    Полная синхронизация папки VisioBible делается в программе на компьютере, не в браузере.
+    <router-link to="/download">Скачать программу</router-link>.
+    Здесь видно, совпадает ли то, что уже учтено на этом сайте, с сервером.
+  </p>
+
   <div class="sync-bar">
     <div class="sync-tools">
       <label v-if="sync.songbooks.length">
         Сборник
         <select :value="sync.bookId" @change="sync.selectBook($event.target.value)">
-          <option v-for="book in sync.songbooks" :key="book.id" :value="book.id">{{ book.title || book.fbid }}</option>
+          <option v-for="book in sync.songbooks" :key="book.id" :value="book.id">{{ book.title || 'Сборник' }}</option>
         </select>
       </label>
-      <p v-else class="empty">Сборников нет</p>
+      <p v-else-if="sync.ready" class="empty">Сборников пока нет</p>
     </div>
     <div v-if="sync.serverCursor !== null" class="sync-status">
-      <p v-if="gap > 0" class="status">На сервере есть {{ gap }} {{ pluralChanges(gap) }}, они ещё не попали в песенник на этом компьютере.</p>
-      <p v-else-if="gap === 0 && !blocked" class="status">Песенник на этом компьютере совпадает с сервером.</p>
-      <details>
-        <summary>Подробности</summary>
-        <p>Курсор сервера: {{ sync.serverCursor }}. Применено: {{ sync.appliedCursor }}.</p>
-      </details>
+      <p v-if="gap > 0" class="status">На сервере есть {{ gap }} {{ pluralChanges(gap) }}. Их ещё нет на этом сайте.</p>
+      <p v-else-if="gap === 0 && !blocked" class="status">На этом сайте всё совпадает с сервером.</p>
     </div>
   </div>
 
+  <p v-if="!sync.ready && !sync.readError" class="empty" role="status">Загрузка…</p>
+
   <div class="sync-grid" :class="{ 'has-conflict': sync.conflicts.length }">
     <section data-queue-in>
-      <h2>Очередь</h2>
-      <p v-if="sync.events.length === 0" class="empty">Входящих событий нет</p>
+      <h2>Изменения на сервере</h2>
+      <p v-if="sync.events.length === 0" class="empty">Новых изменений нет</p>
       <ul v-else class="plain">
         <li v-for="event in sync.events" :key="event.seq">
-          {{ event.seq }} {{ event.body?.song?.title || event.songbook_id }}
+          {{ event.body?.song?.title || 'Правка сборника' }}
         </li>
       </ul>
-      <button class="btn primary" type="button" :disabled="sync.events.length === 0" @click="sync.applyPage">Применить страницу</button>
-      <h3>Исходящие</h3>
-      <p v-if="sync.outgoing.length === 0" class="empty">Исходящих операций нет</p>
+      <button class="btn primary slim" type="button" :disabled="sync.events.length === 0" @click="sync.applyPage">Забрать изменения</button>
+      <h3>Ещё не отправлено</h3>
+      <p v-if="sync.outgoing.length === 0" class="empty">Отправлять нечего</p>
       <ul v-else class="plain">
         <li v-for="op in sync.outgoing" :key="op.operation_id">
-          {{ op.song?.fbid }} {{ op.song?.title }}
+          {{ op.song?.title || 'Правка' }}
         </li>
       </ul>
-      <button class="btn primary" type="button" :disabled="sync.outgoing.length === 0" @click="sync.send">Отправить очередь</button>
+      <button class="btn primary slim" type="button" :disabled="sync.outgoing.length === 0" @click="sync.send">Отправить на сервер</button>
     </section>
 
     <section v-if="sync.conflicts.length" class="conflict" data-conflict>
-      <h2>Конфликт</h2>
+      <h2>Нужно выбрать версию</h2>
+      <p class="hint">Одну и ту же песню изменили и у вас, и на сервере. Выберите, что оставить.</p>
       <div v-for="item in sync.conflicts" :key="item.operation_id">
         <article>
-          <p class="who">Сервер</p>
-          <pre>{{ songText(item.server) }}</pre>
+          <p class="who">На сервере</p>
+          <pre class="lyric">{{ songText(item.server) }}</pre>
         </article>
         <article>
-          <p class="who">Клиент</p>
-          <pre>{{ songText(item.client) }}</pre>
+          <p class="who">У вас</p>
+          <pre class="lyric">{{ songText(item.client) }}</pre>
         </article>
         <p v-if="!item.answer" class="btn-row">
-          <button class="btn primary" type="button" @click="sync.answer(item.operation_id, 'server')">Серверная версия</button>
-          <button class="btn primary" type="button" @click="sync.answer(item.operation_id, 'new')">Новая песня</button>
+          <button class="btn primary slim" type="button" @click="sync.answer(item.operation_id, 'server')">Оставить версию сервера</button>
+          <button class="btn slim" type="button" @click="sync.answer(item.operation_id, 'new')">Сохранить как новую песню</button>
         </p>
-        <p v-else>Ответ: {{ answerLabel(item.answer) }}</p>
+        <p v-else>Выбрано: {{ answerLabel(item.answer) }}</p>
       </div>
     </section>
   </div>
 
   <section v-if="sync.readError || sync.pushError" data-refusal>
-    <h2>Отказ</h2>
-    <p class="error">{{ sync.readError || sync.pushError }}</p>
-    <button v-if="sync.readError === 'reload'" class="btn primary slim" type="button" @click="sync.reloadSnapshot">Загрузить снимок заново</button>
+    <h2>Не получилось</h2>
+    <p class="banner bad">{{ explain(sync.readError || sync.pushError) }}</p>
+    <button v-if="sync.readError === 'reload'" class="btn primary slim" type="button" @click="sync.reloadSnapshot">Начать сверку заново</button>
   </section>
 
-  <p v-if="sync.done" data-sync-done>Синхронизация завершена</p>
+  <p v-if="sync.done" data-sync-done>Изменения учтены. Папку VisioBible по-прежнему обновляет программа на компьютере.</p>
 </template>

@@ -1,35 +1,36 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { homePath, redirectFor } from './guard'
 import { useSessionStore } from './stores/session'
 import LoginPage from './pages/LoginPage.vue'
 import RegisterPage from './pages/RegisterPage.vue'
 import SpacePage from './pages/SpacePage.vue'
-import InvitePage from './pages/InvitePage.vue'
 import AcceptInvitePage from './pages/AcceptInvitePage.vue'
 import SyncPage from './pages/SyncPage.vue'
 import SongbooksPage from './pages/SongbooksPage.vue'
 import PlansPage from './pages/PlansPage.vue'
+import AdminPage from './pages/AdminPage.vue'
+import DownloadPage from './pages/DownloadPage.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: LoginPage, meta: { public: true } },
     { path: '/register', component: RegisterPage, meta: { public: true } },
+    { path: '/catalog', component: SongbooksPage, meta: { public: true, catalog: true } },
+    { path: '/download', component: DownloadPage, meta: { public: true } },
     { path: '/songbooks', component: SongbooksPage },
     { path: '/plans', component: PlansPage },
+    { path: '/communities', component: SpacePage },
+    { path: '/admin', component: AdminPage, meta: { admin: true } },
     { path: '/dimensions/:id', component: SpacePage },
-    { path: '/dimensions/:id/invite', component: InvitePage },
+    { path: '/dimensions/:id/invite', component: SpacePage },
     { path: '/dimensions/:id/sync', component: SyncPage },
     { path: '/invite/:token', component: AcceptInvitePage },
-    { path: '/', redirect: '/login' },
+    { path: '/', redirect: () => homePath(useSessionStore()) },
   ],
 })
 
 router.beforeEach((to) => {
   const session = useSessionStore()
-  if (!to.meta.public && !session.token) {
-    return { path: '/login', query: { next: to.fullPath } }
-  }
-  if (to.meta.public && session.token && (to.path === '/login' || to.path === '/register')) {
-    return { path: '/songbooks' }
-  }
+  return redirectFor(to, { token: session.token, role: session.role })
 })
