@@ -3,6 +3,7 @@ mod mojibake;
 mod paths;
 mod plans;
 mod remote;
+mod running;
 mod sync;
 mod text;
 mod updater;
@@ -212,6 +213,11 @@ async fn start_sync(app: tauri::AppHandle, request: StartRequest) -> Result<Sync
     }
     let mut next_id = || Uuid::new_v4().to_string();
     let outcome = sync::apply(&input, &request.songs, &request.plans, &mut next_id)?;
+    let writes_local =
+        outcome.books.iter().any(|book| book.write) || outcome.plans.iter().any(|plan| plan.write);
+    if writes_local {
+        ensure_visiobible_closed()?;
+    }
     let mut notes = outcome.warnings.clone();
     let client = Remote::new(&cfg.server_url, &cfg.token)?;
     let mut steps = Vec::new();
@@ -279,6 +285,7 @@ async fn start_sync(app: tauri::AppHandle, request: StartRequest) -> Result<Sync
             completed += 1;
         }
         if book.write {
+            ensure_visiobible_closed()?;
             emit_step(&app, &steps, step_index, completed, total);
             step_index += 1;
             let existed = Path::new(&book.path).is_file();
@@ -347,6 +354,7 @@ async fn start_sync(app: tauri::AppHandle, request: StartRequest) -> Result<Sync
             completed += 1;
         }
         if plan.write {
+            ensure_visiobible_closed()?;
             emit_step(&app, &steps, step_index, completed, total);
             step_index += 1;
             let path = Path::new(&plan.path);
@@ -397,6 +405,13 @@ async fn start_sync(app: tauri::AppHandle, request: StartRequest) -> Result<Sync
     );
     config::save(&dir, &cfg)?;
     Ok(SyncReport { notes, backups })
+}
+
+fn ensure_visiobible_closed() -> Result<(), String> {
+    if running::visiobible_running() {
+        return Err(running::CLOSE_MESSAGE.to_string());
+    }
+    Ok(())
 }
 
 fn emit_step(
