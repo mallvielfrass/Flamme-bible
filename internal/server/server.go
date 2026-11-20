@@ -29,6 +29,8 @@ var (
 	errOpBody       = errors.New("operation_id")
 	errReload       = errors.New("reload")
 	errMember       = errors.New("уже участник")
+	errConflict     = errors.New("конфликт")
+	errRequest      = errors.New("запрос")
 )
 
 type Server struct {
@@ -66,6 +68,7 @@ func (s *Server) SetTrustProxy(trust bool) {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	s.mountMVP(mux)
 	mux.HandleFunc("POST /register", s.register)
 	mux.HandleFunc("POST /login", s.login)
 	mux.HandleFunc("POST /refresh", s.refresh)
@@ -86,7 +89,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /songbooks/{id}/publish/decision", s.decidePublish)
 	mux.HandleFunc("GET /catalog/matches", s.catalogMatches)
 	mux.HandleFunc("POST /catalog/hide", s.hideCatalogCopy)
-	return http.MaxBytesHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return s.dispatch(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		applySecurityHeaders(w, r)
 		if r.Method == http.MethodPost && isAuthPath(r.URL.Path) && !s.authLimit.allow(s.clientIP(r), r.URL.Path, time.Now()) {
 			w.Header().Set("Retry-After", "60")
@@ -95,7 +98,7 @@ func (s *Server) Handler() http.Handler {
 		}
 		s.maybeCleanup(r.Context())
 		mux.ServeHTTP(w, r)
-	}), maxBody)
+	}))
 }
 
 func isAuthPath(path string) bool {
@@ -202,6 +205,10 @@ func writeMapped(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, errJSON("reload"))
 	case errors.Is(err, errMember):
 		writeJSON(w, http.StatusConflict, errJSON("уже участник"))
+	case errors.Is(err, errConflict):
+		writeJSON(w, http.StatusConflict, errJSON("конфликт"))
+	case errors.Is(err, errRequest):
+		writeJSON(w, http.StatusBadRequest, errJSON("запрос"))
 	default:
 		log.Printf("server: %v", err)
 		writeJSON(w, http.StatusInternalServerError, errJSON("ошибка"))

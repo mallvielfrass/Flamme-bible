@@ -29,7 +29,7 @@ func Migrate(ctx context.Context, db *pgxpool.Pool) error {
 			return fmt.Errorf("миграция: %w", err)
 		}
 	}
-	return nil
+	return migrateMVP(ctx, db)
 }
 
 func checkPostgres(ctx context.Context, db *pgxpool.Pool) error {

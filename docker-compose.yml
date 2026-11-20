@@ -24,9 +24,12 @@ services:
       ADDR: ":8080"
       SESSION_TTL: ${SESSION_TTL:-720h}
       MEDIA_DIR: /data/media
+      RELEASES_DIR: /data/releases
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       TRUST_PROXY: "1"
     volumes:
       - media:/data/media
+      - releases:/data/releases
     depends_on:
       db:
         condition: service_healthy
@@ -45,3 +48,4 @@ services:
 volumes:
   pgdata:
   media:
+  releases:

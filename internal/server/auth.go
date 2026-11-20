@@ -165,6 +165,10 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
+	if err := promoteBootstrapAdmin(ctx, tx, userID, strings.TrimSpace(body.Email)); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	dimID, err := createDimension(ctx, tx, "personal", "", "", "", "", "", userID, "admin")
 	if err != nil {
 		writeMapped(w, err)
@@ -172,6 +176,11 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	}
 	token, deviceID, err := s.issueSession(ctx, tx, userID, body.DeviceID)
 	if err != nil {
+		writeMapped(w, err)
+		return
+	}
+	var role string
+	if err := tx.QueryRow(ctx, `SELECT role FROM users WHERE id = $1`, userID).Scan(&role); err != nil {
 		writeMapped(w, err)
 		return
 	}
@@ -184,6 +193,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		"device_id":    deviceID,
 		"dimension_id": dimID,
 		"token":        token,
+		"role":         role,
 	})
 }
 
@@ -226,6 +236,15 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
+	if err := promoteBootstrapAdmin(ctx, tx, userID, strings.TrimSpace(body.Email)); err != nil {
+		writeMapped(w, err)
+		return
+	}
+	var role string
+	if err := tx.QueryRow(ctx, `SELECT role FROM users WHERE id = $1`, userID).Scan(&role); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		writeMapped(w, err)
 		return
@@ -235,6 +254,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		"device_id":    deviceID,
 		"dimension_id": dimID,
 		"token":        token,
+		"role":         role,
 	})
 }
 
