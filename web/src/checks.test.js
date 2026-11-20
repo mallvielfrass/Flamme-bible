@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   bookStatus,
   canSubmit,
+  clipPlanText,
   decodePlanText,
+  importEncodingNotice,
   inviteToken,
   moduleNameOk,
   releaseVersionOk,
@@ -42,6 +44,23 @@ describe('checks', () => {
     expect(inviteToken('  one-time  ')).toBe('one-time')
     expect(inviteToken('https://church.test/invite/one-time')).toBe('one-time')
     expect(inviteToken('invite/abc')).toBe('abc')
+  })
+
+  it('keeps a mojibake warning until the user asks to repair it', () => {
+    expect(importEncodingNotice('ÐŸ', { mojibake: false })).toBe(null)
+    const notice = importEncodingNotice('ÐŸÑ€Ð¸Ð²ÐµÑ‚', {
+      mojibake: true,
+      encoding_warning: 'проверьте кодировку',
+      suggested_text: 'Привет',
+      suggested_items: [{ kind: 'text', caption: 'Привет' }],
+      suggested_title: '',
+    })
+    expect(notice.warning).toBe('проверьте кодировку')
+    expect(notice.before).toBe('ÐŸÑ€Ð¸Ð²ÐµÑ‚')
+    expect(notice.after).toBe('Привет')
+    expect(notice.items[0].caption).toBe('Привет')
+    expect(clipPlanText(`  ${'а'.repeat(300)}  `).endsWith('…')).toBe(true)
+    expect(clipPlanText('Привет')).toBe('Привет')
   })
 
   it('decodes a plan file from utf-8 or windows-1251', () => {

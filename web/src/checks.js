@@ -48,6 +48,23 @@ export function inviteToken(raw) {
   return text
 }
 
+export function importEncodingNotice(payload, result) {
+  if (!result?.mojibake || !result?.suggested_text) return null
+  return {
+    warning: result.encoding_warning || 'Похоже, кириллица была прочитана как windows-1251 или latin-1 и сохранена ещё раз.',
+    before: String(payload || ''),
+    after: result.suggested_text,
+    items: result.suggested_items || [],
+    title: result.suggested_title || '',
+  }
+}
+
+export function clipPlanText(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ').trim()
+  if (flat.length <= 280) return flat
+  return `${flat.slice(0, 280)}…`
+}
+
 export function decodePlanText(bytes) {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
   let start = 0
