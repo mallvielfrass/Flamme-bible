@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"golang.org/x/term"
 )
 
 func main() {
@@ -46,14 +48,22 @@ func cmdLogin(args []string) error {
 	fs.SetOutput(io.Discard)
 	serverURL := fs.String("server", "", "адрес сервера")
 	email := fs.String("email", "", "почта")
-	password := fs.String("password", "", "пароль")
+	password := fs.String("password", "", "пароль; если пусто, читается из терминала без эха")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *serverURL == "" || *email == "" || *password == "" {
+	if *serverURL == "" || *email == "" {
 		return fmt.Errorf("нужны --server, --email и --password")
 	}
-	sess, err := login(*serverURL, *email, *password)
+	pw := *password
+	if pw == "" {
+		var err error
+		pw, err = readPassword()
+		if err != nil {
+			return err
+		}
+	}
+	sess, err := login(*serverURL, *email, pw)
 	if err != nil {
 		return err
 	}
@@ -62,6 +72,24 @@ func cmdLogin(args []string) error {
 	}
 	fmt.Printf("пространство %s\n", sess.DimensionID)
 	return nil
+}
+
+func readPassword() (string, error) {
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		return "", fmt.Errorf("нужен --password: скрытый ввод доступен только в терминале")
+	}
+	fmt.Fprint(os.Stderr, "пароль: ")
+	raw, err := term.ReadPassword(fd)
+	fmt.Fprintln(os.Stderr)
+	if err != nil {
+		return "", err
+	}
+	password := string(raw)
+	if password == "" {
+		return "", fmt.Errorf("нужен --password")
+	}
+	return password, nil
 }
 
 func cmdSpace(args []string) error {

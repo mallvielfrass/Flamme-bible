@@ -27,10 +27,19 @@ function nextPath() {
   return typeof next === 'string' && next.startsWith('/') ? next : '/songbooks'
 }
 
+const minPasswordLength = 8
+
+function emailLooksValid(value) {
+  return value.length <= 320 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
 async function submit() {
-  const mail = email.value.trim()
-  emailError.value = mail ? '' : 'Введите почту'
-  passwordError.value = password.value ? '' : 'Введите пароль'
+  const mail = email.value.trim().toLowerCase()
+  emailError.value = emailLooksValid(mail) ? '' : 'Введите почту вида name@example.com'
+  if (!password.value) passwordError.value = 'Введите пароль'
+  else if (props.mode === 'register' && password.value.length < minPasswordLength) {
+    passwordError.value = 'Пароль не короче 8 символов'
+  } else passwordError.value = ''
   againError.value = props.mode === 'register' && passwordAgain.value !== password.value
     ? 'Пароли не совпадают'
     : ''

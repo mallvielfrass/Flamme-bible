@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -19,10 +21,11 @@ import (
 )
 
 const (
-	argonTime    = 2
-	argonMemory  = 19 * 1024
-	argonThreads = 1
-	argonKeyLen  = 32
+	argonTime      = 2
+	argonMemory    = 19 * 1024
+	argonThreads   = 1
+	argonKeyLen    = 32
+	minPasswordLen = 8
 )
 
 func hashPassword(password string) (string, error) {
@@ -90,25 +93,55 @@ type credentials struct {
 	DeviceID string `json:"device_id"`
 }
 
-func validCredentials(body credentials) bool {
-	email := strings.TrimSpace(body.Email)
-	if email == "" || len(email) > 320 || body.Password == "" || len(body.Password) > 1024 {
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func validEmail(email string) bool {
+	if email == "" || len(email) > 320 || strings.ContainsAny(email, " \t\r\n") {
 		return false
 	}
-	if body.DeviceID != "" {
-		if _, err := uuid.Parse(body.DeviceID); err != nil {
-			return false
-		}
+	addr, err := mail.ParseAddress(email)
+	if err != nil || addr.Address != email {
+		return false
+	}
+	at := strings.LastIndex(email, "@")
+	if at <= 0 || at >= len(email)-1 {
+		return false
+	}
+	domain := email[at+1:]
+	if strings.HasPrefix(domain, ".") || strings.HasSuffix(domain, ".") || strings.Contains(domain, "..") || !strings.Contains(domain, ".") {
+		return false
 	}
 	return true
 }
 
+func credentialError(body credentials, register bool) string {
+	if !validEmail(normalizeEmail(body.Email)) {
+		return "email"
+	}
+	if body.Password == "" || len(body.Password) > 1024 || (register && utf8.RuneCountInString(body.Password) < minPasswordLen) {
+		return "пароль"
+	}
+	if body.DeviceID != "" {
+		if _, err := uuid.Parse(body.DeviceID); err != nil {
+			return "запрос"
+		}
+	}
+	return ""
+}
+
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	var body credentials
-	if err := readJSON(r, &body); err != nil || !validCredentials(body) {
+	if err := readJSON(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, errJSON("запрос"))
 		return
 	}
+	if msg := credentialError(body, true); msg != "" {
+		writeJSON(w, http.StatusBadRequest, errJSON(msg))
+		return
+	}
+	email := normalizeEmail(body.Email)
 	hash, err := hashPassword(body.Password)
 	if err != nil {
 		writeMapped(w, err)
@@ -122,7 +155,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(ctx)
 	userID := uuid.NewString()
-	_, err = tx.Exec(ctx, `INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3)`, userID, strings.TrimSpace(body.Email), hash)
+	_, err = tx.Exec(ctx, `INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3)`, userID, email, hash)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -137,7 +170,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
-	token, deviceID, err := issueSession(ctx, tx, userID, body.DeviceID)
+	token, deviceID, err := s.issueSession(ctx, tx, userID, body.DeviceID)
 	if err != nil {
 		writeMapped(w, err)
 		return
@@ -156,13 +189,17 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var body credentials
-	if err := readJSON(r, &body); err != nil || !validCredentials(body) {
+	if err := readJSON(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, errJSON("запрос"))
+		return
+	}
+	if msg := credentialError(body, false); msg != "" {
+		writeJSON(w, http.StatusBadRequest, errJSON(msg))
 		return
 	}
 	ctx := r.Context()
 	var userID, hash string
-	err := s.db.QueryRow(ctx, `SELECT id::text, password_hash FROM users WHERE email = $1`, strings.TrimSpace(body.Email)).Scan(&userID, &hash)
+	err := s.db.QueryRow(ctx, `SELECT id::text, password_hash FROM users WHERE email = $1`, normalizeEmail(body.Email)).Scan(&userID, &hash)
 	if err != nil || !checkPassword(hash, body.Password) {
 		writeJSON(w, http.StatusUnauthorized, errJSON("не авторизован"))
 		return
@@ -173,7 +210,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(ctx)
-	token, deviceID, err := issueSession(ctx, tx, userID, body.DeviceID)
+	token, deviceID, err := s.issueSession(ctx, tx, userID, body.DeviceID)
 	if err != nil {
 		writeMapped(w, err)
 		return
@@ -216,13 +253,14 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(ctx)
 	var familyID string
 	var replaced, revoked *time.Time
+	var expired bool
 	err = tx.QueryRow(ctx, `
-		SELECT f.id::text, t.replaced_at, f.revoked_at
+		SELECT f.id::text, t.replaced_at, f.revoked_at, (t.expires_at IS NULL OR t.expires_at <= now())
 		FROM session_tokens t
 		JOIN session_families f ON f.id = t.family_id
 		WHERE t.digest = $1
 		FOR UPDATE OF t, f
-	`, tokenDigest(token)).Scan(&familyID, &replaced, &revoked)
+	`, tokenDigest(token)).Scan(&familyID, &replaced, &revoked, &expired)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && revoked != nil) {
 		writeJSON(w, http.StatusUnauthorized, errJSON("не авторизован"))
 		return
@@ -243,6 +281,10 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, errJSON("не авторизован"))
 		return
 	}
+	if expired {
+		writeJSON(w, http.StatusUnauthorized, errJSON("не авторизован"))
+		return
+	}
 	next, err := newSecret()
 	if err != nil {
 		writeMapped(w, err)
@@ -257,7 +299,7 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, errJSON("не авторизован"))
 		return
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO session_tokens (digest, family_id) VALUES ($1, $2)`, tokenDigest(next), familyID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO session_tokens (digest, family_id, expires_at) VALUES ($1, $2, now() + ($3 * interval '1 second'))`, tokenDigest(next), familyID, int64(s.sessionTTL/time.Second)); err != nil {
 		writeMapped(w, err)
 		return
 	}
@@ -288,25 +330,27 @@ func (s *Server) principal(r *http.Request) (principal, error) {
 	}
 	var p principal
 	var replaced, revoked *time.Time
+	var expired bool
 	err := s.db.QueryRow(r.Context(), `
-		SELECT f.id::text, f.user_id::text, f.device_id::text, t.replaced_at, f.revoked_at
+		SELECT f.id::text, f.user_id::text, f.device_id::text, t.replaced_at, f.revoked_at,
+		       (t.expires_at IS NULL OR t.expires_at <= now())
 		FROM session_tokens t
 		JOIN session_families f ON f.id = t.family_id
 		WHERE t.digest = $1
-	`, tokenDigest(token)).Scan(&p.FamilyID, &p.UserID, &p.DeviceID, &replaced, &revoked)
+	`, tokenDigest(token)).Scan(&p.FamilyID, &p.UserID, &p.DeviceID, &replaced, &revoked, &expired)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return principal{}, errUnauthorized
 	}
 	if err != nil {
 		return principal{}, err
 	}
-	if replaced != nil || revoked != nil {
+	if replaced != nil || revoked != nil || expired {
 		return principal{}, errUnauthorized
 	}
 	return p, nil
 }
 
-func issueSession(ctx context.Context, tx pgx.Tx, userID, deviceID string) (string, string, error) {
+func (s *Server) issueSession(ctx context.Context, tx pgx.Tx, userID, deviceID string) (string, string, error) {
 	if deviceID == "" {
 		deviceID = uuid.NewString()
 		if _, err := tx.Exec(ctx, `INSERT INTO devices (id, user_id) VALUES ($1, $2)`, deviceID, userID); err != nil {
@@ -333,7 +377,7 @@ func issueSession(ctx context.Context, tx pgx.Tx, userID, deviceID string) (stri
 	if _, err := tx.Exec(ctx, `INSERT INTO session_families (id, user_id, device_id) VALUES ($1, $2, $3)`, familyID, userID, deviceID); err != nil {
 		return "", "", err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO session_tokens (digest, family_id) VALUES ($1, $2)`, tokenDigest(secret), familyID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO session_tokens (digest, family_id, expires_at) VALUES ($1, $2, now() + ($3 * interval '1 second'))`, tokenDigest(secret), familyID, int64(s.sessionTTL/time.Second)); err != nil {
 		return "", "", err
 	}
 	return secret, deviceID, nil

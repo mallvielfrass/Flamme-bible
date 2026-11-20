@@ -1,0 +1,14 @@
+.git
+web
+deploy
+plans
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+*.vbm
+*.db
+*.sqlite
+*.sqlite3
+*.exe

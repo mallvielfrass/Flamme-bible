@@ -111,6 +111,83 @@ func TestSession(t *testing.T) {
 	}
 }
 
+func TestRegisterValidation(t *testing.T) {
+	srv := newTestServer(t)
+	code, raw := api(t, srv, "", http.MethodPost, "/register", map[string]any{
+		"email": "not-an-email", "password": "secret-pass",
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("почта %d %s", code, raw)
+	}
+	code, raw = api(t, srv, "", http.MethodPost, "/register", map[string]any{
+		"email": "a@example.com", "password": "short",
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("короткий пароль %d %s", code, raw)
+	}
+	code, raw = api(t, srv, "", http.MethodPost, "/login", map[string]any{
+		"email": "a@example.com", "password": "short",
+	})
+	if code != http.StatusUnauthorized {
+		t.Fatalf("короткий пароль на входе %d %s", code, raw)
+	}
+	user := registerUser(t, srv, "User@Example.com", "secret-pass", nil)
+	code, raw = api(t, srv, "", http.MethodPost, "/login", map[string]any{
+		"email": "user@example.com", "password": "secret-pass",
+	})
+	if code != http.StatusOK {
+		t.Fatalf("почта без регистра %d %s", code, raw)
+	}
+	if user.UserID == "" {
+		t.Fatal("пользователь не создан")
+	}
+}
+
+func TestSessionExpires(t *testing.T) {
+	srv := newTestServer(t)
+	a := registerUser(t, srv, "a@example.com", "secret-pass", nil)
+	ctx := context.Background()
+	if _, err := testPool.Exec(ctx, `UPDATE session_tokens SET expires_at = now() - interval '1 hour'`); err != nil {
+		t.Fatal(err)
+	}
+	code, raw := api(t, srv, a.Token, http.MethodGet, "/dimensions/"+a.DimensionID, nil)
+	if code != http.StatusUnauthorized {
+		t.Fatalf("истёкшая сессия %d %s", code, raw)
+	}
+	if err := CleanupSessions(ctx, testPool); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM session_tokens`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("истёкшие токены не удалены: %d", n)
+	}
+	code, raw = api(t, srv, a.Token, http.MethodPost, "/refresh", nil)
+	if code != http.StatusUnauthorized {
+		t.Fatalf("refresh истёкшего токена %d %s", code, raw)
+	}
+}
+
+func TestAuthRateLimit(t *testing.T) {
+	srv := newTestServer(t)
+	for i := 0; i < 10; i++ {
+		code, raw := api(t, srv, "", http.MethodPost, "/login", map[string]any{
+			"email": "a@example.com", "password": "secret-pass",
+		})
+		if code == http.StatusTooManyRequests {
+			t.Fatalf("лимит раньше времени, запрос %d %s", i, raw)
+		}
+	}
+	code, raw := api(t, srv, "", http.MethodPost, "/login", map[string]any{
+		"email": "a@example.com", "password": "secret-pass",
+	})
+	if code != http.StatusTooManyRequests {
+		t.Fatalf("лимит %d %s", code, raw)
+	}
+}
+
 func bytesEqual(a, b []byte) bool {
 	if len(a) != len(b) {
 		return false

@@ -1,0 +1,47 @@
+services:
+  db:
+    # Минимум — PostgreSQL 16. Для 17 и новее смените тег, например postgres:17-alpine.
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-flammebible}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-flammebible}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-flammebible}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-flammebible}?sslmode=disable
+      ADDR: ":8080"
+      SESSION_TTL: ${SESSION_TTL:-720h}
+      MEDIA_DIR: /data/media
+      TRUST_PROXY: "1"
+    volumes:
+      - media:/data/media
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8088}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  media:
