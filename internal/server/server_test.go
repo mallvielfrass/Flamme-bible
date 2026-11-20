@@ -37,7 +37,8 @@ func TestMain(m *testing.M) {
 func reset(t *testing.T) {
 	t.Helper()
 	_, err := testPool.Exec(context.Background(), `
-		TRUNCATE plan_items, plans, modules, client_releases, app_settings,
+		TRUNCATE bible_passages, module_verses, song_embeddings,
+		         plan_items, plans, modules, client_releases, app_settings,
 		         song_hides, conflicts, operation_results, change_log, song_order, songs, songbooks,
 		         invites, session_tokens, session_families, devices, memberships, sync_counters,
 		         dimensions, users

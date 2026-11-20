@@ -51,6 +51,13 @@ func main() {
 	if trustProxy(os.Getenv("TRUST_PROXY")) {
 		api.SetTrustProxy(true)
 	}
+	if embedURL := strings.TrimSpace(os.Getenv("EMBED_URL")); embedURL != "" {
+		api.SetEmbedder(server.NewHTTPEmbedder(embedURL, os.Getenv("EMBED_MODEL")))
+		api.StartIndexer(context.Background())
+		log.Printf("смысловой поиск: %s", api.EmbedModel())
+	} else {
+		log.Printf("смысловой поиск выключен")
+	}
 	addr := os.Getenv("ADDR")
 	if addr == "" {
 		addr = ":8080"

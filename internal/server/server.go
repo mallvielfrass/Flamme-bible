@@ -32,15 +32,19 @@ var (
 	errConflict     = errors.New("конфликт")
 	errRequest      = errors.New("запрос")
 	errUnmappable   = errors.New("windows-1251")
+	errSemanticOff  = errors.New("смысловой поиск недоступен")
 )
 
 type Server struct {
-	db         *pgxpool.Pool
-	sessionTTL time.Duration
-	trustProxy bool
-	authLimit  *ipLimiter
-	cleanMu    sync.Mutex
-	lastClean  time.Time
+	db          *pgxpool.Pool
+	sessionTTL  time.Duration
+	trustProxy  bool
+	authLimit   *ipLimiter
+	cleanMu     sync.Mutex
+	lastClean   time.Time
+	embedder    Embedder
+	indexInline bool
+	indexCh     chan semanticJob
 }
 
 type principal struct {
@@ -210,6 +214,8 @@ func writeMapped(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, errJSON("конфликт"))
 	case errors.Is(err, errRequest):
 		writeJSON(w, http.StatusBadRequest, errJSON("запрос"))
+	case errors.Is(err, errSemanticOff):
+		writeJSON(w, http.StatusServiceUnavailable, errJSON("смысловой поиск недоступен"))
 	case errors.Is(err, errUnmappable):
 		writeJSON(w, http.StatusBadRequest, errJSON("в тексте есть символы, которых нет в windows-1251"))
 	default:

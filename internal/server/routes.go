@@ -27,6 +27,8 @@ func (s *Server) mountMVP(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/plans/{id}/export", s.exportPlan)
 
 	mux.HandleFunc("GET /api/songs/search", s.searchSongs)
+	mux.HandleFunc("GET /api/songs/semantic", s.searchSongsSemantic)
+	mux.HandleFunc("GET /api/bible/semantic", s.searchBibleSemantic)
 
 	mux.HandleFunc("POST /api/modules", s.createModule)
 	mux.HandleFunc("GET /api/modules", s.listModules)
