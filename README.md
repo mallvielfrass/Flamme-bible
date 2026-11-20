@@ -26,7 +26,7 @@ docker-compose.yml  API, сайт и PostgreSQL
 ## Требования
 
 - Go 1.27 (см. `go.mod`)
-- PostgreSQL 16 или новее (17 и следующие мажоры тоже подходят; патч не зафиксирован)
+- PostgreSQL 16 или новее с расширением pgvector (в compose это образ `pgvector/pgvector:pg16`)
 - Node.js 20+ и npm — для сайта
 - Docker и Docker Compose — для запуска контейнерами
 - openssl — только если нужен свой TLS на самом процессе Go
@@ -74,11 +74,12 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Поднимаются три сервиса:
+Поднимаются четыре сервиса:
 
-- `db` — PostgreSQL 16 (том `pgdata`). Тег образа можно сменить на `postgres:17-alpine` или новее.
-- `api` — Go-сервер по HTTP внутри сети compose. Каталог медиафайлов — том `media`, путь в контейнере `/data/media` (`MEDIA_DIR`). Порт API наружу не публикуется.
-- `web` — собранный сайт и nginx. Проксирует `/register`, `/login`, `/refresh`, `/logout`, `/dimensions`, `/invites`, `/songbooks`, `/catalog` на `api`. Сайт доступен только на `127.0.0.1:${FRONTEND_PORT:-8088}`.
+- `db` — PostgreSQL 16 с pgvector (том `pgdata`).
+- `api` — Go-сервер по HTTP внутри сети compose. Каталог медиафайлов — том `media`, путь в контейнере `/data/media` (`MEDIA_DIR`). Порт API наружу не публикуется. Смысловой поиск ходит в `embed`.
+- `embed` — локальная модель `intfloat/multilingual-e5-small` на CPU, пулинг mean. Первый запуск скачивает веса в том `embedcache`. Дальше запросы считает только этот контейнер. На пробной машине он занимал около 1,3 ГиБ.
+- `web` — собранный сайт и nginx. Проксирует `/register`, `/login`, `/refresh`, `/logout`, `/dimensions`, `/invites`, `/songbooks`, `/catalog` и `/api/` на `api`. Сайт доступен только на `127.0.0.1:${FRONTEND_PORT:-8088}`.
 
 Проверка конфигурации без запуска: `docker compose config`.
 
@@ -107,7 +108,11 @@ go run ./cmd/cli build ...
 go run ./cmd/cli install --root путь/к/копии/VisioBible
 go run ./cmd/cli plan путь/к/plan.vplt
 go run ./cmd/cli bible путь/к/копии/модуля
+go run ./cmd/reindex
+go run ./cmd/reindex -import путь/к/копии/модуля -module <id модуля>
 ```
+
+`cmd/reindex` нужен, когда задан `EMBED_URL`. `-import` читает BibleQuote с диска в уже созданный модуль и не кладёт текст перевода в git.
 
 `--password` можно не передавать: в терминале пароль читается без эха. В скриптах и тестах по-прежнему передаётся флаг, из обычного stdin пароль не читается.
 
@@ -128,6 +133,8 @@ go run ./cmd/cli bible путь/к/копии/модуля
 | `VITE_API_TARGET` | сайт (`npm run dev`) | куда проксировать API |
 | `FLAMMEBIBLE_CA` | CLI | дополнительный CA |
 | `FLAMMEBIBLE_CONFIG` | CLI | каталог настроек |
+| `EMBED_URL` | сервер и `cmd/reindex` | адрес локальной модели. Пусто — смысловой поиск выключен |
+| `EMBED_MODEL` | сервер и `cmd/reindex` | имя модели, по умолчанию `intfloat/multilingual-e5-small` |
 
 Образец без секретов: `.env.example`.
 
