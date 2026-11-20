@@ -1,60 +1,63 @@
 # FlammeBible
 
-Сервер синхронизации песенников и клиент (CLI + веб) для работы вместе с уже установленной VisioBible. Сама программа VisioBible, её модули и чужие сборники песен в этот репозиторий не входят.
+FlammeBible — сервис для церквей, которые показывают песни и Библию через VisioBible. На сервере лежат общие сборники песен, планы служений и общины. Программа на компьютере сверяет папку VisioBible с сервером, чтобы на разных машинах были одни и те же песни и планы.
 
-Стек: Go (API и CLI), PostgreSQL, Vue 3 + Pinia + Vite (сайт).
+Файлы планов читаются и в Unicode, и в старой кодировке Windows-1251. Если кириллица уже превратилась в кракозябры, сервер и программа предупреждают и предлагают исправленный текст.
 
-Лицензия: MIT, см. `LICENSE`.
+## Из чего состоит
 
-## Состав репозитория
+- Сервер хранит учётные записи, общины, сборники, планы и файлы программы.
+- Сайт: вход, общины, сборники, планы, проверка материалов и страница скачивания.
+- Программа для компьютера смотрит папку VisioBible, сверяет песни и планы и записывает результат. Перед заменой файла рядом остаётся копия с окончанием `.bak`. Замену делайте при закрытой VisioBible.
+- Команды в терминале сверяют сборники без окна. Отдельная команда заливает новую сборку программы на сервер.
+
+Сервер написан на Go, база — PostgreSQL, сайт — Vue. Окно программы собирается через Tauri.
 
 ```
-cmd/server          HTTP API
-cmd/cli             клиент синхронизации (командная строка)
-internal/server     обработчики, миграции, схема PostgreSQL
-internal/vbm        разбор и запись файлов .vbm
-web                 сайт: вход, пространства, приглашения, состояние синхронизации
-deploy/nginx        пример системного nginx с TLS
-plans               архитектура, дорожная карта и задачи
-rules.md            правила сопровождения кода
-мое_представление.txt  исходная заметка о замысле, без правок
-.env.example        имена переменных окружения, без секретов
-Dockerfile          образ API
-docker-compose.yml  API, сайт и PostgreSQL
+cmd/server     сервер
+cmd/cli        команды в терминале
+cmd/upload     загрузка новой версии программы
+internal/      код сервера и разбор файлов песен
+web/           сайт
+desktop/       программа для компьютера
+deploy/nginx   пример настройки nginx
+docs/          описание запросов к серверу
+plans/         замысел и задачи
 ```
 
-## Требования
+## Быстрый запуск
 
-- Go 1.27 (см. `go.mod`)
-- PostgreSQL 16 или новее (17 и следующие мажоры тоже подходят; патч не зафиксирован)
-- Node.js 20+ и npm — для сайта
-- Docker и Docker Compose — для запуска контейнерами
-- openssl — только если нужен свой TLS на самом процессе Go
-
-## Локальный запуск
-
-1. Создайте базу PostgreSQL 16+ и задайте `DATABASE_URL`.
-
-2. API (терминал 1). Без сертификатов сервер слушает HTTP — так его ставят за обратным прокси:
+Нужны Docker и Docker Compose. Из корня репозитория:
 
 ```bash
-export DATABASE_URL='postgres://USER:PASSWORD@127.0.0.1:5432/flammebible?sslmode=disable'
-# необязательно: ADDR=:8080
-# необязательно: SESSION_TTL=720h
+cp .env.example .env
+docker compose up -d --build
+```
+
+В `.env` замените `POSTGRES_PASSWORD`. Если сайту нужен администратор, до регистрации укажите его почту в `ADMIN_EMAIL`.
+
+Поднимаются три службы:
+
+- база PostgreSQL 16, данные хранятся в томе `pgdata`. Для более новой версии смените образ, например на `postgres:17-alpine`;
+- сервер внутри сети Docker. Снаружи его порт не открыт. Каталоги на диске — тома `media` и `releases`;
+- сайт только на этом компьютере: http://127.0.0.1:8088. Другой порт задаётся переменной `FRONTEND_PORT`.
+
+Проверить настройки, не запуская службы: `docker compose config`.
+
+## Разработка без Docker
+
+Нужны Go 1.27, PostgreSQL 16 или новее, Node.js 20 или новее и npm.
+
+Сервер. Создайте базу и укажите строку подключения. Пароль со знаками `@`, `:`, `/` и `#` в этой строке нужно записывать в кодировке адреса.
+
+```bash
+export DATABASE_URL='postgres://flammebible:change-me@127.0.0.1:5432/flammebible?sslmode=disable'
 go run ./cmd/server
 ```
 
-Свой TLS на процессе, без прокси:
+Сервер слушает http://127.0.0.1:8080 и при запуске сам обновляет таблицы. Другой адрес — переменная `ADDR`.
 
-```bash
-openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=127.0.0.1"
-export TLS_CERT=cert.pem
-export TLS_KEY=key.pem
-```
-
-`cert.pem` и `key.pem` в git не попадают. `TLS_CERT` и `TLS_KEY` задаются только вместе. При запуске применяются миграции из `internal/server/schema.sql`. Нужен PostgreSQL с мажором не ниже 16.
-
-3. Сайт (терминал 2):
+Сайт, во втором окне терминала:
 
 ```bash
 cd web
@@ -62,86 +65,117 @@ npm install
 npm run dev
 ```
 
-Откройте http://localhost:5173. Vite проксирует запросы API, включая `/catalog`, на `http://127.0.0.1:8080` (или на `VITE_API_TARGET`). Для локального HTTPS API задайте `VITE_API_TARGET=https://127.0.0.1:8080`. Сборка: `npm run build`.
+Откройте http://localhost:5173. Запросы к серверу уходят на http://127.0.0.1:8080. Другой адрес сервера задаётся переменной `VITE_API_TARGET`. Готовая сборка сайта: `npm run build`.
 
-## Docker Compose
-
-Из корня репозитория:
+Программа для компьютера. Нужны ещё Rust 1.90 или новее. На Linux, чтобы открылось окно, установите библиотеки:
 
 ```bash
-cp .env.example .env
-# в .env замените POSTGRES_PASSWORD
-docker compose up -d --build
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 ```
-
-Поднимаются три сервиса:
-
-- `db` — PostgreSQL 16 (том `pgdata`). Тег образа можно сменить на `postgres:17-alpine` или новее.
-- `api` — Go-сервер по HTTP внутри сети compose. Каталог медиафайлов — том `media`, путь в контейнере `/data/media` (`MEDIA_DIR`). Порт API наружу не публикуется.
-- `web` — собранный сайт и nginx. Проксирует `/register`, `/login`, `/refresh`, `/logout`, `/dimensions`, `/invites`, `/songbooks`, `/catalog` на `api`. Сайт доступен только на `127.0.0.1:${FRONTEND_PORT:-8088}`.
-
-Проверка конфигурации без запуска: `docker compose config`.
-
-## Системный nginx и TLS
-
-Публичный вход — nginx на хосте. Пример: `deploy/nginx/flammebible.conf.example`.
-
-- `server_name bible.example.com`
-- порт 80 отвечает редиректом 301 на HTTPS
-- порт 443, без `default_server`: на хосте могут быть другие сайты
-- сертификат — уже лежащий wildcard: в примере пути `/etc/ssl/example/wildcard.crt` и `/etc/ssl/example/wildcard.key`. Отдельный выпуск Let's Encrypt для имени сайта не нужен, если wildcard уже установлен. Подставьте свой каталог сертификата.
-- `include /etc/letsencrypt/options-ssl-nginx.conf` и `ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem` — общие параметры TLS, не выпуск сертификата на это имя
-- прокси на `http://127.0.0.1:8088` (тот же `FRONTEND_PORT`)
-- заголовки `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`, `server_tokens off`, `client_max_body_size 1m`, заголовки безопасности и лимит на `/register`, `/login`, `/refresh`
-
-В compose у API включён `TRUST_PROXY=1`: адрес клиента берётся из `X-Real-IP`, который выставляет nginx. Не открывайте порт API напрямую с этой настройкой.
-
-## CLI
 
 ```bash
-go run ./cmd/cli login --server https://127.0.0.1:8080 --email you@example.com --password '...'
-go run ./cmd/cli space <dimension-id>
-go run ./cmd/cli sync --db local.db путь/к/копии/книги.vbm
-go run ./cmd/cli resolve ...
-go run ./cmd/cli build ...
-go run ./cmd/cli install --root путь/к/копии/VisioBible
-go run ./cmd/cli plan путь/к/plan.vplt
-go run ./cmd/cli bible путь/к/копии/модуля
+cd desktop
+npm install
+npm run tauri dev
 ```
 
-`--password` можно не передавать: в терминале пароль читается без эха. В скриптах и тестах по-прежнему передаётся флаг, из обычного stdin пароль не читается.
+В окне адрес сервера по умолчанию — http://localhost:8080. Можно указать и `https://example.com`.
 
-Для самоподписанного сертификата задайте `FLAMMEBIBLE_CA=cert.pem`. Сессия хранится в `~/.config/flammebible` (на Windows — `%AppData%\flammebible`), либо в каталоге `FLAMMEBIBLE_CONFIG`. Работать нужно только с копиями модулей VisioBible, не с оригиналами.
+Сборка установщика из каталога `desktop`:
 
-## Переменные окружения
+```bash
+npm run tauri build
+```
 
-| Имя | Кто использует | Назначение |
+Пакеты появляются в `desktop/src-tauri/target/release/bundle/`. На Linux это пакеты deb и AppImage. Установщик Windows собирается на Windows, образ диска macOS — на macOS.
+
+Команды в терминале, из корня репозитория:
+
+```bash
+go run ./cmd/cli login --server http://127.0.0.1:8080 --email you@example.com
+go run ./cmd/cli sync --remote --db local.db путь/к/сборнику.vbm
+```
+
+Если не передать `--password`, программа спросит пароль и не покажет его на экране. В скрипте пароль передают этим флагом. Команда `sync` показывает расхождения. Флаг `--apply` записывает их в файл, флаг `--remote` сверяет сборник с сервером. Другие команды: `space`, `resolve`, `build`, `install`, `plan`, `bible`.
+
+Настройки программы и команд лежат в `~/.config/flammebible`. На Windows это `%AppData%\flammebible`. Свой каталог задаётся переменной `FLAMMEBIBLE_CONFIG`. Окно хранит свой файл `desktop.json` и не затирает вход команд терминала.
+
+## Свой сервер
+
+Гостей принимает nginx и передаёт запросы сайту. Пример: `deploy/nginx/flammebible.conf.example`. Подставьте своё имя сайта вместо `bible.example.com`, пути к своему сертификату и ключу и порт из `FRONTEND_PORT`, если он не `8088`. Сайт в Docker слушает только этот компьютер, поэтому в примере указан адрес `http://127.0.0.1:8088`.
+
+В Docker сервер доверяет адресу посетителя, который передаёт nginx. Порт самого сервера в интернет не открывайте.
+
+Администратор. В `.env` запишите почту, например `ADMIN_EMAIL=admin@example.com`, и перезапустите службы: `docker compose up -d`. Этот человек регистрируется на сайте или входит ещё раз — тогда учётная запись становится администратором. Пароль он выбирает сам, в настройках сервера пароля нет. Если `ADMIN_EMAIL` пустая, администратора нет. На сайте у администратора есть раздел «Админ-панель»: там проверяют сборники и модули Библии и выкладывают программу.
+
+Новая версия программы.
+
+1. Соберите пакеты: в каталоге `desktop` выполните `npm run tauri build`.
+2. Войдите на сайт под администратором. В админ-панели укажите номер версии, приложите файлы и загрузите их. Пока версию не опубликуют, посетители её не видят. Для публикации нужны файлы Linux и Windows. Файл macOS необязателен.
+3. С машины, где уже лежат собранные файлы, загрузку делает команда. Токен — значение `token` после входа. Команда `login` сохраняет его в `session.json` в каталоге настроек. Пароль эта команда не спрашивает.
+
+```bash
+go run ./cmd/upload -server https://example.com -token "$FLAMMEBIBLE_TOKEN" -version 1.2.3 -linux ./flammebible -windows ./flammebible.exe
+```
+
+Адрес сервера можно задать переменной `FLAMMEBIBLE_SERVER`, токен — переменной `FLAMMEBIBLE_TOKEN`. После загрузки версию всё равно публикуют в админ-панели. Файлы сервер кладёт в каталог `RELEASES_DIR`. В Docker это `/data/releases`.
+
+## Настройки
+
+Образец без паролей и токенов — `.env.example`. Файл `.env` в git не попадает.
+
+| Имя | Где используется | Зачем |
 |---|---|---|
-| `DATABASE_URL` | сервер, интеграционные тесты | строка подключения PostgreSQL |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | compose | учётная запись контейнера PostgreSQL |
-| `TLS_CERT`, `TLS_KEY` | сервер | необязательный TLS; оба сразу или оба пустые |
-| `ADDR` | сервер | адрес listen, по умолчанию `:8080` |
-| `SESSION_TTL` | сервер | срок сессии, по умолчанию `720h`; при `/refresh` срок начинается заново |
-| `MEDIA_DIR` | сервер | каталог медиафайлов на томе |
-| `TRUST_PROXY` | сервер | `1` — доверять `X-Real-IP` от своего прокси |
-| `FRONTEND_PORT` | compose и nginx хоста | локальный порт сайта, по умолчанию `8088` |
-| `VITE_API_TARGET` | сайт (`npm run dev`) | куда проксировать API |
-| `FLAMMEBIBLE_CA` | CLI | дополнительный CA |
-| `FLAMMEBIBLE_CONFIG` | CLI | каталог настроек |
+| `DATABASE_URL` | сервер, проверки | строка подключения к PostgreSQL |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Docker Compose | учётная запись базы в контейнере. Из них собирается `DATABASE_URL` |
+| `ADDR` | сервер | адрес, на котором сервер принимает соединения. По умолчанию `:8080` |
+| `SESSION_TTL` | сервер | срок входа. По умолчанию `720h` (30 суток). При обновлении входа срок начинается заново. Короче одной минуты задать нельзя |
+| `TLS_CERT`, `TLS_KEY` | сервер | пара файлов, если защищённое соединение принимает сам сервер. Задаются только вместе. Обычно сертификат стоит на nginx, и эти переменные не нужны |
+| `MEDIA_DIR` | сервер | каталог, который сервер создаёт при запуске. В Docker это `/data/media` |
+| `RELEASES_DIR` | сервер | каталог файлов программы. Без него загрузка и скачивание версии не работают. В Docker это `/data/releases` |
+| `ADMIN_EMAIL` | сервер | почта администратора сайта. Сравнение без учёта регистра, при регистрации и при входе. Пароль здесь не задаётся |
+| `TRUST_PROXY` | сервер | `1` — брать адрес посетителя из заголовка, который ставит свой nginx. В Docker уже включено. На открытом порту сервера не включайте |
+| `FRONTEND_PORT` | Docker Compose, nginx | порт сайта на этом компьютере. По умолчанию `8088` |
+| `VITE_API_TARGET` | сайт при `npm run dev` | куда сайт отправляет запросы. По умолчанию `http://127.0.0.1:8080` |
+| `FLAMMEBIBLE_CA` | команды и окно | файл своего сертификата, если сервер использует самоподписанный сертификат |
+| `FLAMMEBIBLE_CONFIG` | команды и окно | свой каталог настроек вместо `~/.config/flammebible` |
+| `FLAMMEBIBLE_SERVER` | `cmd/upload` | адрес сервера. По умолчанию `http://127.0.0.1:8080` |
+| `FLAMMEBIBLE_TOKEN` | `cmd/upload` | токен администратора. В git его не кладут |
 
-Образец без секретов: `.env.example`.
+Почта при регистрации — вида `name@example.com`, пароль — не короче 8 символов.
 
-Регистрация принимает почту вида `name@example.com` и пароль не короче 8 символов. На `/register`, `/login` и `/refresh` стоит лимит по IP: 5, 10 и 30 запросов в минуту. Тело запроса — не больше 1 МиБ.
+## Проверки
 
-## Тесты
+Сервер и команды. Нужны PostgreSQL 16 или новее и переменная `DATABASE_URL`:
 
 ```bash
-go test ./internal/vbm
-go test ./cmd/cli -skip 'TestTwoCLIProcessesExchangeSong|TestConflictBothOutcomes|TestDeleteVersusEditDoesNotChoose|TestBuildPatchOnServer'
+go test -p 1 ./...
 ```
 
-Четыре интеграционных теста CLI и тесты `./internal/server` требуют PostgreSQL 16+ и `DATABASE_URL`. Тесты VBM и CLI не читают чужие песенники: синтетические `.vbm` собираются во временном каталоге.
+Сайт:
 
-## Что не входит в репозиторий
+```bash
+cd web
+npm test
+```
 
-Программа VisioBible, архивы, сторонние `.vbm` / модули Библии и песенники, переписки и исследовательские дампы. Лицензия на их распространение не выяснена, и в репозитории с кодом им не место.
+Программа для компьютера. Сборка интерфейса без окна:
+
+```bash
+cd desktop
+npm test
+npm run build
+```
+
+Проверка кода окна. Нужны те же библиотеки Linux, что и для запуска окна:
+
+```bash
+cargo test --manifest-path desktop/src-tauri/Cargo.toml
+```
+
+## Ссылки
+
+- `docs/api-mvp.md` — описание запросов к серверу
+- `rules.md` — правила кода
+- `plans/` — архитектура, дорожная карта и задачи
+- `LICENSE` — лицензия MIT
