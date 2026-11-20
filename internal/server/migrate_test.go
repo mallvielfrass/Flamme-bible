@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -14,12 +13,15 @@ func TestMigrateTwice(t *testing.T) {
 	if err := Migrate(ctx, testPool); err != nil {
 		t.Fatal(err)
 	}
-	var version string
-	if err := testPool.QueryRow(ctx, `SHOW server_version`).Scan(&version); err != nil {
+	major, version, err := postgresMajor(ctx, testPool)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(version, PostgresVersion) {
-		t.Fatalf("версия PostgreSQL %q, зафиксирована %s", version, PostgresVersion)
+	if major < minPostgresMajor {
+		t.Fatalf("версия PostgreSQL %q (мажор %d), нужна %d или новее", version, major, minPostgresMajor)
+	}
+	if majorFromVersionNum(160010) != 16 || majorFromVersionNum(170000) != 17 || majorFromVersionNum(180001) != 18 {
+		t.Fatal("server_version_num разбирается не по мажору")
 	}
 	var sequences int
 	if err := testPool.QueryRow(ctx, `

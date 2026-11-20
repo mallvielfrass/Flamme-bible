@@ -1,9 +1,10 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig } from 'vitest/config'
+import { loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const target = env.VITE_API_TARGET || 'https://127.0.0.1:8080'
+  const target = env.VITE_API_TARGET || 'http://127.0.0.1:8080'
   const proxy = {
     target,
     changeOrigin: true,
@@ -16,6 +17,7 @@ export default defineConfig(({ mode }) => {
     plugins: [vue()],
     server: {
       proxy: {
+        '/api': proxy,
         '/register': proxy,
         '/login': proxy,
         '/refresh': proxy,
@@ -23,7 +25,12 @@ export default defineConfig(({ mode }) => {
         '/dimensions': proxy,
         '/invites': proxy,
         '/songbooks': proxy,
+        '/catalog': proxy,
       },
+    },
+    test: {
+      environment: 'node',
+      include: ['src/**/*.test.js'],
     },
   }
 })

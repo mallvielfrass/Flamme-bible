@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS session_families (
 CREATE TABLE IF NOT EXISTS session_tokens (
   digest bytea PRIMARY KEY,
   family_id uuid NOT NULL REFERENCES session_families (id),
-  replaced_at timestamptz
+  replaced_at timestamptz,
+  expires_at timestamptz
 );
 
 CREATE TABLE IF NOT EXISTS invites (
@@ -127,3 +128,9 @@ CREATE TABLE IF NOT EXISTS song_hides (
   PRIMARY KEY (user_id, songbook_id, fbid),
   FOREIGN KEY (songbook_id, fbid) REFERENCES songs (songbook_id, fbid)
 );
+
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS expires_at timestamptz;
+
+UPDATE session_tokens SET expires_at = now() + interval '720 hours' WHERE expires_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS session_tokens_expires_at ON session_tokens (expires_at);

@@ -1,6 +1,10 @@
 # зависимости и сборка фронта
 web/node_modules/
 web/dist/
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
 
 # скомпилированные бинарники
 /server
