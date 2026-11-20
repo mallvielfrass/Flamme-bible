@@ -29,7 +29,7 @@ services:
       TRUST_PROXY: "1"
       # Пусто — смысловой поиск выключен. Включение: EMBED_URL и профиль semantic.
       EMBED_URL: ${EMBED_URL:-}
-      EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
+      EMBED_MODEL: ${EMBED_MODEL:-cointegrated/rubert-tiny2}
     volumes:
       - media:/data/media
       - releases:/data/releases
@@ -45,12 +45,12 @@ services:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4
     command:
       - --model-id
-      - ${EMBED_MODEL:-intfloat/multilingual-e5-small}
+      - ${EMBED_MODEL:-cointegrated/rubert-tiny2}
       - --dtype
       - float32
-      # e5 усредняет токены. Без этого TEI для BERT берёт CLS, и поиск портится.
+      # Карточка rubert-tiny2 берёт вектор из токена CLS. Нормализацию включает запрос.
       - --pooling
-      - mean
+      - cls
       # В --help 1.9.4 токенизаторов по умолчанию столько, сколько ядер видит процесс.
       - --tokenization-workers
       - ${EMBED_CPUS:-1}
@@ -73,8 +73,8 @@ services:
       MKL_DYNAMIC: "FALSE"
       KMP_BLOCKTIME: "0"
     cpus: ${EMBED_CPUS:-1}
-    # 1g убивает процесс на загрузке ONNX (пик около 1,1 ГиБ). 1280m проходит старт.
-    mem_limit: ${EMBED_MEMORY:-1280m}
+    # Холодный старт занимает около 690 МиБ. 512m процесс убивает, 768m проходит.
+    mem_limit: ${EMBED_MEMORY:-768m}
     volumes:
       - embedcache:/data
     restart: unless-stopped

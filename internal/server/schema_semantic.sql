@@ -1,5 +1,5 @@
--- Смысловой поиск. vector(384) — модель intfloat/multilingual-e5-small.
--- Другая размерность сюда не встанет: нужна новая колонка и полная переиндексация.
+-- Смысловой поиск. vector(312) — модель cointegrated/rubert-tiny2.
+-- Колонка другого размера очищается при запуске сервера, затем нужен reindex.
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS song_embeddings (
   fbid text NOT NULL,
   model text NOT NULL,
   text_hash text NOT NULL,
-  embedding vector(384) NOT NULL,
+  embedding vector(312) NOT NULL,
   PRIMARY KEY (songbook_id, fbid),
   FOREIGN KEY (songbook_id, fbid) REFERENCES songs (songbook_id, fbid) ON DELETE CASCADE
 );
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS bible_passages (
   body text NOT NULL,
   model text NOT NULL,
   text_hash text NOT NULL,
-  embedding vector(384) NOT NULL,
+  embedding vector(312) NOT NULL,
   UNIQUE (module_id, book, chapter, verse_start)
 );
 
