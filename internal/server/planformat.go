@@ -66,6 +66,42 @@ type historyItem struct {
 	ModuleSecond          string `xml:"ModuleSecond,attr,omitempty"`
 }
 
+const mojibakeWarning = "Похоже, кириллица была прочитана как windows-1251 или latin-1 и сохранена ещё раз."
+
+func encodingNotice(format, payload string) planEncodingNotice {
+	if !visioTextFormat(format) {
+		return planEncodingNotice{}
+	}
+	fixed, ok := repairMojibake(payload)
+	if !ok {
+		return planEncodingNotice{}
+	}
+	title, items, err := parsePlanPayload(format, []byte(fixed))
+	if err != nil {
+		return planEncodingNotice{}
+	}
+	items, err = normalizeItems(items)
+	if err != nil {
+		return planEncodingNotice{}
+	}
+	return planEncodingNotice{
+		Mojibake:        true,
+		EncodingWarning: mojibakeWarning,
+		SuggestedText:   fixed,
+		SuggestedTitle:  title,
+		SuggestedItems:  items,
+	}
+}
+
+func visioTextFormat(format string) bool {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "vplt", "history", "plandef", "plan_def", "ini":
+		return true
+	default:
+		return false
+	}
+}
+
 func parsePlanPayload(format string, data []byte) (string, []planItem, error) {
 	text, err := decodePlanText(data)
 	if err != nil {
@@ -87,19 +123,69 @@ func parsePlanPayload(format string, data []byte) (string, []planItem, error) {
 	}
 }
 
-func formatPlan(format string, view planView) (string, string, error) {
+func formatPlan(format, charset string, view planView) ([]byte, string, error) {
+	charset, err := planCharset(charset)
+	if err != nil {
+		return nil, "", err
+	}
+	var text, ctype string
+	var xmlDoc bool
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "vplt":
-		raw, err := formatVPLT(view.Items)
-		return raw, "application/xml; charset=utf-8", err
+		text, err = formatVPLT(view.Items)
+		ctype = "application/xml; charset=utf-8"
+		xmlDoc = true
 	case "history":
-		raw, err := formatHistory(view.Items)
-		return raw, "application/xml; charset=utf-8", err
+		text, err = formatHistory(view.Items)
+		ctype = "application/xml; charset=utf-8"
+		xmlDoc = true
 	case "plandef", "plan_def", "ini":
-		return formatPlanDef(view.Title, view.Items), "text/plain; charset=utf-8", nil
+		text = formatPlanDef(view.Title, view.Items)
+		ctype = "text/plain; charset=utf-8"
 	default:
-		return "", "", errRequest
+		return nil, "", errRequest
 	}
+	if err != nil {
+		return nil, "", err
+	}
+	if xmlDoc {
+		text = withXMLCharset(text, charset)
+	}
+	if charset == "utf-8" {
+		return []byte(text), ctype, nil
+	}
+	raw, err := encodeWindows1251(text)
+	if err != nil {
+		return nil, "", err
+	}
+	return raw, strings.ReplaceAll(ctype, "utf-8", "windows-1251"), nil
+}
+
+func planCharset(raw string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "utf-8", "utf8":
+		return "utf-8", nil
+	case "windows-1251", "cp1251", "windows1251":
+		return "windows-1251", nil
+	default:
+		return "", errRequest
+	}
+}
+
+// withXMLCharset ставит в объявление ту кодировку, в которой уйдут байты.
+func withXMLCharset(text, charset string) string {
+	label := "UTF-8"
+	if charset == "windows-1251" {
+		label = "windows-1251"
+	}
+	const current = `encoding="UTF-8"`
+	if strings.Contains(text, current) {
+		if label == "UTF-8" {
+			return text
+		}
+		return strings.Replace(text, current, `encoding="`+label+`"`, 1)
+	}
+	return text
 }
 
 func decodePlanText(data []byte) (string, error) {

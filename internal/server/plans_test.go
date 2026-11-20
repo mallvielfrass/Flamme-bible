@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/text/encoding/charmap"
 )
 
 func TestPlansPersonalCommunityAndSync(t *testing.T) {
@@ -198,5 +201,82 @@ func TestPlanImportExport(t *testing.T) {
 	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/plans/"+plan.ID+"/export?format=plandef", nil)
 	if code != http.StatusOK || !strings.Contains(string(raw), "module_short_name=RST") || !strings.Contains(string(raw), "module_short_name_second=NRT") {
 		t.Fatalf("plandef %d %s", code, raw)
+	}
+
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/plans/"+plan.ID+"/export?format=history&encoding=windows-1251", nil)
+	if code != http.StatusOK || !strings.Contains(string(raw), `encoding="windows-1251"`) || utf8.Valid(raw) {
+		t.Fatalf("1251 %d %q", code, raw)
+	}
+	if !strings.Contains(decodeCharmap(charmap.Windows1251, raw), "Тихая") {
+		t.Fatalf("1251 текст %q", raw)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/plans/"+plan.ID+"/export?format=plandef&encoding=nope", nil)
+	if code != http.StatusBadRequest {
+		t.Fatalf("кодировка %d %s", code, raw)
+	}
+	withAccent := plan.Items
+	withAccent[2].Quote = "café"
+	code, raw = api(t, srv, owner.Token, http.MethodPut, "/api/plans/"+plan.ID, map[string]any{
+		"title": plan.Title, "version": plan.Version, "updated_at": plan.UpdatedAt, "items": withAccent,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("акцент %d %s", code, raw)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/plans/"+plan.ID+"/export?format=plandef&encoding=windows-1251", nil)
+	if code != http.StatusBadRequest || !strings.Contains(string(raw), "windows-1251") {
+		t.Fatalf("непредставимый символ %d %s", code, raw)
+	}
+}
+
+func TestPlanImportKeepsMojibakeUntilAsked(t *testing.T) {
+	srv := newTestServer(t)
+	owner := registerUser(t, srv, "owner@example.com", "secret-pass", nil)
+	original := `<VisioBibleJournal><Journal Name="Text"><Item Caption="Привет" Quote="мир" Class="-1"/></Journal></VisioBibleJournal>`
+	payload := decodeCharmap(charmap.Windows1252, []byte(original))
+	code, raw := api(t, srv, owner.Token, http.MethodPost, "/api/plans/import", map[string]any{
+		"format": "vplt", "payload": payload,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("импорт %d %s", code, raw)
+	}
+	var imported struct {
+		planView
+		planEncodingNotice
+	}
+	mustJSON(t, raw, &imported)
+	if !imported.Mojibake || imported.EncodingWarning == "" || imported.SuggestedText != original {
+		t.Fatalf("предупреждение %+v", imported.planEncodingNotice)
+	}
+	if len(imported.Items) != 1 || imported.Items[0].Caption == "Привет" {
+		t.Fatalf("текст исправлен молча %+v", imported.Items)
+	}
+	if len(imported.SuggestedItems) != 1 || imported.SuggestedItems[0].Caption != "Привет" {
+		t.Fatalf("предложение %+v", imported.SuggestedItems)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodPut, "/api/plans/"+imported.ID, map[string]any{
+		"title": imported.Title, "version": imported.Version, "updated_at": imported.UpdatedAt,
+		"items": imported.SuggestedItems,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("починка %d %s", code, raw)
+	}
+	var fixed planView
+	mustJSON(t, raw, &fixed)
+	if fixed.Items[0].Caption != "Привет" || fixed.Items[0].Quote != "мир" {
+		t.Fatalf("после кнопки %+v", fixed.Items)
+	}
+
+	code, raw = api(t, srv, owner.Token, http.MethodPost, "/api/plans/import", map[string]any{
+		"format": "vplt", "payload": original,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("чистый %d %s", code, raw)
+	}
+	var clean struct {
+		Mojibake bool `json:"mojibake"`
+	}
+	mustJSON(t, raw, &clean)
+	if clean.Mojibake {
+		t.Fatal("обычный план помечен")
 	}
 }

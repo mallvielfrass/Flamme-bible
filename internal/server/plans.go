@@ -42,6 +42,19 @@ type planView struct {
 	Items       []planItem `json:"items"`
 }
 
+type planEncodingNotice struct {
+	Mojibake        bool       `json:"mojibake,omitempty"`
+	EncodingWarning string     `json:"encoding_warning,omitempty"`
+	SuggestedText   string     `json:"suggested_text,omitempty"`
+	SuggestedTitle  string     `json:"suggested_title,omitempty"`
+	SuggestedItems  []planItem `json:"suggested_items,omitempty"`
+}
+
+type planImportResult struct {
+	planView
+	planEncodingNotice
+}
+
 type planWrite struct {
 	Title     string     `json:"title"`
 	Version   int64      `json:"version"`
@@ -118,7 +131,7 @@ func (s *Server) importPlan(w http.ResponseWriter, r *http.Request) {
 		writePlanErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, view)
+	writeJSON(w, http.StatusOK, planImportResult{planView: view, planEncodingNotice: encodingNotice(body.Format, body.Payload)})
 }
 
 func (s *Server) insertPlan(ctx context.Context, userID, title, dimensionID string, items []planItem) (planView, error) {
@@ -457,7 +470,7 @@ func (s *Server) exportPlan(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, view)
 		return
 	}
-	payload, ctype, err := formatPlan(format, view)
+	payload, ctype, err := formatPlan(format, r.URL.Query().Get("encoding"), view)
 	if err != nil {
 		writePlanErr(w, err)
 		return
