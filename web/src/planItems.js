@@ -47,6 +47,17 @@ export function bibleItem(fields) {
   }
 }
 
+export function bibleItemFromPassage(hit) {
+  return bibleItem({
+    module_short_name: hit?.module_short_name || '',
+    book: hit?.book || 0,
+    chapter: hit?.chapter || 0,
+    verse: hit?.verse_start || 0,
+    reference: hit?.reference || '',
+    quote: hit?.text || '',
+  })
+}
+
 export function textItem(fields) {
   const caption = (fields.caption || '').trim()
   const quote = (fields.quote || '').trim()
