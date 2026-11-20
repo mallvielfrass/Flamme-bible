@@ -1,0 +1,44 @@
+# зависимости и сборка фронта
+web/node_modules/
+web/dist/
+
+# скомпилированные бинарники
+/server
+/cli
+/flammebible-server
+/flammebible-cli
+cmd/server/server
+cmd/cli/cli
+*.exe
+*.dll
+
+# локальные ключи и секреты
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+
+# локальные базы
+*.db
+*.sqlite
+*.sqlite3
+
+# сторонние модули и архивы VisioBible (в репозиторий не входят)
+visioBible/
+VisioBible*
+*.vbm
+*.vbi
+*.vbx
+*.7z
+*.zip
+*.tar
+*.tar.gz
+*.tar.zst
+
+# python / ОС
+__pycache__/
+*.py[cod]
+Thumbs.db
+.DS_Store
+desktop.ini
