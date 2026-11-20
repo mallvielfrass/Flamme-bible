@@ -59,7 +59,18 @@
 
 `POST /api/plans/import` — `format` равен `json`, `vplt`, `history` или `plandef`. `payload` — текст. `title` необязателен.
 
-`GET /api/plans/{id}/export?format=json|vplt|history|plandef`.
+Для `vplt`, `history` и `plandef` сервер не переписывает текст молча. Если payload — уже валидный UTF-8, но похож на кириллицу, прочитанную как windows-1251 или latin-1 и сохранённую снова, план записывается как прислан, а в ответ добавляются поля:
+
+- `mojibake`: `true`
+- `encoding_warning`: короткое предупреждение
+- `suggested_text`: тот же файл после обратного прогона
+- `suggested_title` и `suggested_items`: разбор `suggested_text`, если он читается
+
+Обычный русский текст, немецкий и французский с умлаутами и смешанный текст этих языков флаг не получают. JSON-импорт не проверяется: строка в теле уже Unicode. Файлы `.vbm` этот разбор не касается.
+
+`GET /api/plans/{id}/export?format=json|vplt|history|plandef&encoding=utf-8|windows-1251`.
+
+`encoding` по умолчанию `utf-8`. Для XML заголовок `encoding` совпадает с байтами ответа: `UTF-8` или `windows-1251`. Если в тексте есть символ, которого нет в windows-1251, ответ `400` и `{"error":"в тексте есть символы, которых нет в windows-1251"}`: файл клиенту не отдаётся. JSON всегда в Unicode, параметр `encoding` для него не применяется.
 
 `plan.vplt` пишет только `Caption`, `Reference`, `Quote`, `Class`: VisioBible при сохранении стирает незнакомые атрибуты. Книга, глава, стих и второй перевод сохраняются в `history` и `plandef`.
 
@@ -67,7 +78,7 @@ History — XML `VisioBibleJournal` / `Journal Name="Bible"|"Text"|"Songs"`. У 
 
 PlanDef — секции `[Plan]`, `[Bible.N]`, `[Text.N]`, `[Songs.N]`. Перевод строки в значении записывается как `\n`.
 
-Байты windows-1251 принимаются разбором payload, если это не UTF-8. В JSON-теле строка уже в Unicode.
+Байты windows-1251 принимаются разбором payload, если это не UTF-8. В JSON-теле строка уже Unicode. Повторно сохранённая кириллица (валидный UTF-8 с «ÐŸÑ€…» или «Ïðèâåò») не исправляется при чтении: импорт только предупреждает и предлагает текст.
 
 ## Поиск песен
 

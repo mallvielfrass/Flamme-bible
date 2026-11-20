@@ -1,7 +1,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { api, apiBlob, explain } from '../api'
-import { decodePlanText } from '../checks'
+import { clipPlanText, decodePlanText, importEncodingNotice } from '../checks'
 import {
   bibleItem,
   exportFileName,
@@ -27,6 +27,8 @@ const addTab = ref('song')
 const confirmDelete = ref(false)
 const importFormat = ref('json')
 const importTitle = ref('')
+const exportEncoding = ref('utf-8')
+const repair = ref(null)
 const bible = reactive({
   module_short_name: '',
   module_short_name_second: '',
@@ -68,6 +70,7 @@ function applyEditor(view) {
     items: (view.items || []).map((item) => ({ ...item })),
   }
   confirmDelete.value = false
+  repair.value = null
 }
 
 async function load() {
@@ -87,6 +90,7 @@ async function load() {
 function blank() {
   editor.value = { id: '', title: '', version: 0, updated_at: '', items: [] }
   confirmDelete.value = false
+  repair.value = null
   error.value = ''
   notice.value = ''
 }
@@ -94,6 +98,7 @@ function blank() {
 async function openPlan(plan) {
   error.value = ''
   notice.value = ''
+  repair.value = null
   busy.value = true
   try {
     applyEditor(await api(`/api/plans/${plan.id}`, { token: session.token }))
@@ -240,19 +245,49 @@ async function importPlan(event) {
   try {
     const payload = decodePlanText(new Uint8Array(await file.arrayBuffer()))
     const space = session.current
+    const title = importTitle.value.trim()
     const created = await api('/api/plans/import', {
       method: 'POST',
       token: session.token,
       body: {
         format: importFormat.value,
         payload,
-        title: importTitle.value.trim(),
+        title,
         dimension_id: space?.kind === 'community' ? space.id : '',
       },
     })
     applyEditor(created)
+    repair.value = importEncodingNotice(payload, created)
+    if (repair.value && title) repair.value.title = ''
     importTitle.value = ''
-    notice.value = 'План импортирован.'
+    notice.value = repair.value ? 'План импортирован. Проверьте кодировку.' : 'План импортирован.'
+    await load()
+  } catch (err) {
+    error.value = explain(err)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function applyRepair() {
+  if (!editor.value?.id || !repair.value) return
+  error.value = ''
+  notice.value = ''
+  busy.value = true
+  try {
+    const saved = await api(`/api/plans/${editor.value.id}`, {
+      method: 'PUT',
+      token: session.token,
+      body: {
+        title: repair.value.title || editor.value.title,
+        version: editor.value.version,
+        updated_at: editor.value.updated_at || undefined,
+        items: repair.value.items,
+      },
+    })
+    applyEditor(saved)
+    repair.value = null
+    notice.value = 'Кодировка исправлена.'
     await load()
   } catch (err) {
     error.value = explain(err)
@@ -265,7 +300,8 @@ async function download(format) {
   if (!editor.value?.id) return
   error.value = ''
   try {
-    const { blob } = await apiBlob(`/api/plans/${editor.value.id}/export?format=${format}`, { token: session.token })
+    const encoding = format === 'json' ? '' : `&encoding=${encodeURIComponent(exportEncoding.value)}`
+    const { blob } = await apiBlob(`/api/plans/${editor.value.id}/export?format=${format}${encoding}`, { token: session.token })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -320,6 +356,14 @@ watch(scope, load, { immediate: true })
     <section v-if="editor" class="card">
       <p v-if="error" class="banner bad" role="alert">{{ error }}</p>
       <p v-if="notice" class="banner ok" role="status">{{ notice }}</p>
+      <div v-if="repair" class="banner bad" role="alert">
+        <p>{{ repair.warning }}</p>
+        <p class="hint">До</p>
+        <p class="quote">{{ clipPlanText(repair.before) }}</p>
+        <p class="hint">После</p>
+        <p class="quote">{{ clipPlanText(repair.after) }}</p>
+        <button class="btn slim" type="button" :disabled="busy" @click="applyRepair">Починить кодировку</button>
+      </div>
       <p class="hint">{{ placeLabel }}</p>
       <label>Название
         <input v-model="editor.title" name="title" />
@@ -413,6 +457,12 @@ watch(scope, load, { immediate: true })
         </label>
         <label>Название при импорте
           <input v-model="importTitle" name="import_title" placeholder="необязательно" />
+        </label>
+        <label>Кодировка файла
+          <select v-model="exportEncoding">
+            <option value="utf-8">UTF-8</option>
+            <option value="windows-1251">Windows-1251</option>
+          </select>
         </label>
       </div>
       <label>Импортировать файл

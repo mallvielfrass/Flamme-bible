@@ -134,6 +134,10 @@ pub struct PlanInfo {
     pub name: String,
     pub kind: String,
     pub items: Vec<PlanItem>,
+    pub mojibake: bool,
+    pub encoding_warning: String,
+    pub preview_before: String,
+    pub preview_after: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1021,6 +1025,29 @@ fn parse_bible_ini(text: &str) -> BibleIndex {
     index
 }
 
+fn plan_info(
+    path: String,
+    name: String,
+    kind: &str,
+    items: Vec<PlanItem>,
+    notice: Option<crate::mojibake::Notice>,
+) -> PlanInfo {
+    let (mojibake, encoding_warning, preview_before, preview_after) = match notice {
+        Some(notice) => (true, notice.warning, notice.before, notice.after),
+        None => (false, String::new(), String::new(), String::new()),
+    };
+    PlanInfo {
+        path,
+        name,
+        kind: kind.to_string(),
+        items,
+        mojibake,
+        encoding_warning,
+        preview_before,
+        preview_after,
+    }
+}
+
 fn read_plans(dir: &Path) -> (Vec<PlanInfo>, PlanDefView) {
     let mut plans = Vec::new();
     let mut def = PlanDefView::default();
@@ -1029,7 +1056,8 @@ fn read_plans(dir: &Path) -> (Vec<PlanInfo>, PlanDefView) {
     }
     let plan_def_path = dir.join("PlanDef.ini");
     if plan_def_path.is_file() {
-        if let Ok(parsed) = plans::read_plan_def_file(&plan_def_path) {
+        if let Ok(loaded) = plans::load_text(&plan_def_path) {
+            let parsed = plans::parse_plan_def(&loaded.text);
             def = PlanDefView {
                 name: parsed.name.clone(),
                 module_short_name: parsed.module_short_name,
@@ -1037,28 +1065,32 @@ fn read_plans(dir: &Path) -> (Vec<PlanInfo>, PlanDefView) {
                 journals: parsed.journals,
             };
             if !parsed.items.is_empty() {
-                plans.push(PlanInfo {
-                    path: plan_def_path.display().to_string(),
-                    name: if parsed.name.is_empty() {
+                plans.push(plan_info(
+                    plan_def_path.display().to_string(),
+                    if parsed.name.is_empty() {
                         "PlanDef".into()
                     } else {
                         parsed.name
                     },
-                    kind: "plandef".into(),
-                    items: parsed.items,
-                });
+                    "plandef",
+                    parsed.items,
+                    loaded.notice,
+                ));
             }
         }
     }
     let history = dir.join("History.ini");
     if history.is_file() {
-        if let Ok(items) = plans::read_history_file(&history) {
-            plans.push(PlanInfo {
-                path: history.display().to_string(),
-                name: "История".into(),
-                kind: "history".into(),
-                items,
-            });
+        if let Ok(loaded) = plans::load_text(&history) {
+            if let Ok(items) = plans::parse_history(&loaded.text) {
+                plans.push(plan_info(
+                    history.display().to_string(),
+                    "История".into(),
+                    "history",
+                    items,
+                    loaded.notice,
+                ));
+            }
         }
     }
     if let Ok(entries) = fs::read_dir(dir) {
@@ -1078,13 +1110,18 @@ fn read_plans(dir: &Path) -> (Vec<PlanInfo>, PlanDefView) {
                     .and_then(|stem| stem.to_str())
                     .unwrap_or("план")
                     .to_string();
-                let items = plans::read_vplt_file(&path).unwrap_or_default();
-                plans.push(PlanInfo {
-                    path: path.display().to_string(),
-                    name,
-                    kind: "vplt".into(),
-                    items,
+                let loaded = plans::load_text(&path).unwrap_or(plans::LoadedText {
+                    text: String::new(),
+                    notice: None,
                 });
+                let items = plans::parse_vplt(&loaded.text).unwrap_or_default();
+                plans.push(plan_info(
+                    path.display().to_string(),
+                    name,
+                    "vplt",
+                    items,
+                    loaded.notice,
+                ));
             }
         }
     }
@@ -1548,6 +1585,7 @@ mod tests {
         assert_eq!(scan.bibles[0].short_name, "RST+");
         assert_eq!(scan.bibles[0].books[0].short_name, "Быт");
         assert_eq!(scan.plans.len(), 3);
+        assert!(scan.plans.iter().all(|plan| !plan.mojibake));
         assert!(scan
             .plans
             .iter()

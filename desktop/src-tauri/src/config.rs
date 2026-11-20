@@ -26,6 +26,9 @@ pub struct Config {
     pub plans: BTreeMap<String, PlanBind>,
     #[serde(default)]
     pub pending_fbids: BTreeMap<String, String>,
+    /// Пусто или `utf-8` — как раньше. `windows-1251` — планы и PlanDef.ini.
+    #[serde(default)]
+    pub plan_encoding: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -79,6 +82,7 @@ pub struct PublicSettings {
     pub user_id: String,
     pub dimension_id: String,
     pub role: String,
+    pub plan_windows1251: bool,
 }
 
 fn default_server() -> String {
@@ -95,6 +99,7 @@ impl Default for Config {
             songbooks: BTreeMap::new(),
             plans: BTreeMap::new(),
             pending_fbids: BTreeMap::new(),
+            plan_encoding: String::new(),
         }
     }
 }
@@ -109,6 +114,8 @@ impl Config {
             user_id: self.user.user_id.clone(),
             dimension_id: self.user.dimension_id.clone(),
             role: self.user.role.clone(),
+            plan_windows1251: crate::plans::normalize_plan_encoding(&self.plan_encoding)
+                == "windows-1251",
         }
     }
 }

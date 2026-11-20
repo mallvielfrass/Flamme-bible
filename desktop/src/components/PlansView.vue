@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { reactive, ref } from "vue";
 import type { PlanItem, Scan, SongHit } from "../commands";
+import EncodingNotice from "./EncodingNotice.vue";
 
-defineProps<{ scan: Scan | null; hits: SongHit[] }>();
-const emit = defineEmits<{ create: [name: string, items: PlanItem[]]; search: [string] }>();
+defineProps<{ scan: Scan | null; hits: SongHit[]; windows1251: boolean }>();
+const emit = defineEmits<{
+  create: [name: string, items: PlanItem[]];
+  search: [string];
+  repair: [string];
+  setEncoding: [boolean];
+}>();
 
 const name = ref("");
 const query = ref("");
@@ -34,6 +40,13 @@ function blank(kind: PlanItem["kind"]): PlanItem {
     <p v-if="!scan || scan.needs_choice" class="empty">Сначала на вкладке синхронизации выберите папку VisioBible.</p>
     <template v-else>
       <p class="hint">Планы уйдут на сервер и скачаются оттуда по кнопке «Начать синхронизацию». Файл plan.vplt хранит только подпись и текст: перевод и номер стиха VisioBible в нём не сохраняет, для них используется History или PlanDef.</p>
+      <EncodingNotice :plans="scan.plans" @repair="emit('repair', $event)" />
+      <label>Кодировка записи планов и PlanDef.ini
+        <select :value="windows1251 ? 'windows-1251' : 'utf-8'" @change="emit('setEncoding', ($event.target as HTMLSelectElement).value === 'windows-1251')">
+          <option value="utf-8">UTF-8</option>
+          <option value="windows-1251">Windows-1251</option>
+        </select>
+      </label>
       <article v-for="plan in scan.plans" :key="plan.path" class="conflict-card">
         <strong>{{ plan.name }}</strong>
         <p class="hint">{{ plan.path }}</p>

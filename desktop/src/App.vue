@@ -18,6 +18,7 @@ const settings = ref<Settings>({
   user_id: "",
   dimension_id: "",
   role: "",
+  plan_windows1251: false,
 });
 const serverUrl = ref(settings.value.server_url);
 const email = ref("");
@@ -145,6 +146,25 @@ async function start() {
   }
 }
 
+async function repairEncoding(path: string) {
+  error.value = "";
+  try {
+    scan.value = await api.repairPlanEncoding(path);
+    preview.value = null;
+    note("Кодировка плана исправлена. Файл записан в UTF-8.");
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+async function setPlanEncoding(windows1251: boolean) {
+  try {
+    settings.value = await api.setPlanEncoding(windows1251);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
 async function createPlan(name: string, items: PlanItem[]) {
   error.value = "";
   try {
@@ -235,8 +255,10 @@ onMounted(() => {
       @start="start"
       @open-conflict="conflict = $event"
       @resolve-plan="onPlanChoice"
+      @repair="repairEncoding"
+      @set-encoding="setPlanEncoding"
     />
-    <PlansView v-else-if="tab === 'plans'" :scan="scan" :hits="hits" @create="createPlan" @search="search" />
+    <PlansView v-else-if="tab === 'plans'" :scan="scan" :hits="hits" :windows1251="settings.plan_windows1251" @create="createPlan" @search="search" @repair="repairEncoding" @set-encoding="setPlanEncoding" />
     <UpdatesView v-else :info="updateInfo" :error="updateError" :busy="updateBusy" :saved-path="savedPath" @check="checkUpdate" @download="downloadUpdate" />
     <ConflictModal
       v-if="conflict"

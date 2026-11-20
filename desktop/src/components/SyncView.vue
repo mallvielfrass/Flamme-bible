@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import type { Dimension, Preview, Progress, Scan, Settings, SongRow } from "../commands";
 import { actionLabel, foundLine, groupRows } from "../syncState";
+import EncodingNotice from "./EncodingNotice.vue";
 
 const props = defineProps<{
   settings: Settings;
@@ -34,6 +35,8 @@ const emit = defineEmits<{
   start: [];
   openConflict: [SongRow];
   resolvePlan: [string, "keep_local" | "take_server" | "keep_both"];
+  repair: [string];
+  setEncoding: [boolean];
 }>();
 
 const songs = computed(() => groupRows(props.preview?.songs ?? []));
@@ -83,6 +86,7 @@ const conflictsLeft = computed(() => (props.preview?.songs ?? []).filter((row) =
 
     <section class="card">
       <div class="step-head"><span class="num">2</span><h2>Список изменений перед запуском</h2></div>
+      <EncodingNotice :plans="scan?.plans ?? []" @repair="emit('repair', $event)" />
       <button class="btn" type="button" :disabled="busy !== '' || !settings.logged_in" @click="emit('refresh')">Показать, что изменится</button>
       <p v-if="busy === 'preview'" class="hint">Смотрим, что изменилось…</p>
       <p v-if="error" class="error">{{ error }}</p>
@@ -138,6 +142,12 @@ const conflictsLeft = computed(() => (props.preview?.songs ?? []).filter((row) =
     <section class="card">
       <div class="step-head"><span class="num">3</span><h2>Запись</h2></div>
       <p class="hint">Перед заменой сборника или плана программа сохранит рядом копию с окончанием .bak. Её можно вернуть, если новая запись не подойдёт.</p>
+      <label>Кодировка записи планов и PlanDef.ini
+        <select :value="settings.plan_windows1251 ? 'windows-1251' : 'utf-8'" @change="emit('setEncoding', ($event.target as HTMLSelectElement).value === 'windows-1251')">
+          <option value="utf-8">UTF-8</option>
+          <option value="windows-1251">Windows-1251</option>
+        </select>
+      </label>
       <button class="btn primary" type="button" :disabled="busy !== '' || !preview || conflictsLeft > 0" @click="emit('start')">Начать синхронизацию</button>
       <p v-if="conflictsLeft" class="error">Сначала выберите, что делать с конфликтами.</p>
       <p v-if="busy === 'sync'" class="hint">Идёт синхронизация…</p>

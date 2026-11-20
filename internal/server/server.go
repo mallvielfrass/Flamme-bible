@@ -31,6 +31,7 @@ var (
 	errMember       = errors.New("уже участник")
 	errConflict     = errors.New("конфликт")
 	errRequest      = errors.New("запрос")
+	errUnmappable   = errors.New("windows-1251")
 )
 
 type Server struct {
@@ -209,6 +210,8 @@ func writeMapped(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, errJSON("конфликт"))
 	case errors.Is(err, errRequest):
 		writeJSON(w, http.StatusBadRequest, errJSON("запрос"))
+	case errors.Is(err, errUnmappable):
+		writeJSON(w, http.StatusBadRequest, errJSON("в тексте есть символы, которых нет в windows-1251"))
 	default:
 		log.Printf("server: %v", err)
 		writeJSON(w, http.StatusInternalServerError, errJSON("ошибка"))
