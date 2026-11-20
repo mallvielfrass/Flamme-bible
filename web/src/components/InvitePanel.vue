@@ -1,8 +1,12 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { api } from '../api'
+import { api, explain } from '../api'
 import { useSessionStore } from '../stores/session'
+
+const props = defineProps({
+  dimensionId: { type: String, default: '' },
+})
 
 const emit = defineEmits(['created'])
 const route = useRoute()
@@ -12,72 +16,79 @@ const invite = ref(null)
 const userId = ref('')
 const excluded = ref(false)
 const error = ref('')
+const busy = ref(false)
+
+const spaceId = computed(() => props.dimensionId || route.params.id || '')
+
+const link = computed(() => {
+  if (!invite.value?.token || typeof location === 'undefined') return ''
+  return `${location.origin}/invite/${invite.value.token}`
+})
 
 async function createInvite() {
   error.value = ''
   invite.value = null
+  busy.value = true
   try {
-    invite.value = await api(`/dimensions/${route.params.id}/invites`, {
+    invite.value = await api(`/api/dimensions/${spaceId.value}/invites`, {
       method: 'POST',
       token: session.token,
       body: { ttl_seconds: Number(ttl.value) },
     })
     emit('created', invite.value)
   } catch (err) {
-    error.value = err.message
+    error.value = explain(err)
+  } finally {
+    busy.value = false
   }
 }
 
 async function exclude() {
   error.value = ''
   excluded.value = false
+  busy.value = true
   try {
-    await api(`/dimensions/${route.params.id}/members/${userId.value.trim()}/exclude`, {
+    await api(`/dimensions/${spaceId.value}/members/${encodeURIComponent(userId.value.trim())}/exclude`, {
       method: 'POST',
       token: session.token,
     })
     excluded.value = true
+    userId.value = ''
   } catch (err) {
-    error.value = err.message
+    error.value = explain(err)
+  } finally {
+    busy.value = false
   }
 }
 </script>
 
 <template>
-  <section class="card">
-    <div class="card-head">
-      <h2>Приглашение</h2>
-      <router-link class="back" :to="`/dimensions/${route.params.id}`">К пространству →</router-link>
-    </div>
+  <section id="invite" class="card">
+    <h2>Пригласить в общину</h2>
+    <p class="hint">Ссылка одноразовая. Человек откроет её, войдёт и окажется в общине.</p>
     <form @submit.prevent="createInvite">
-      <label>Срок, секунды
-        <span class="with-icon">
-          <input v-model="ttl" name="ttl" type="number" min="1" required />
-          <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6" />
-            <path d="M12 8v4.5l3 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
-        </span>
+      <label>Срок ссылки
+        <select v-model="ttl" name="ttl">
+          <option :value="3600">1 час</option>
+          <option :value="86400">1 день</option>
+          <option :value="604800">7 дней</option>
+        </select>
       </label>
-      <button class="btn primary" type="submit">Создать приглашение</button>
+      <button class="btn primary" type="submit" :disabled="busy || !spaceId">Создать приглашение</button>
     </form>
-    <p v-if="invite">
-      Ссылка:
-      <router-link :to="`/invite/${invite.token}`">{{ invite.token }}</router-link>
+    <p v-if="link" class="answer">
+      Ссылка: <a :href="link">{{ link }}</a>
     </p>
-    <form @submit.prevent="exclude">
-      <label>Идентификатор участника
-        <span class="with-icon">
-          <input v-model="userId" name="user_id" placeholder="Идентификатор участника" required />
-          <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.6" />
-            <path d="M6 19c1.2-2.4 3-3.5 6-3.5s4.8 1.1 6 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
-        </span>
-      </label>
-      <button class="btn gold" type="submit">Исключить</button>
-    </form>
-    <p v-if="excluded">Участник исключён</p>
-    <p v-if="error" class="error">{{ error }}</p>
+    <details>
+      <summary>Исключить участника</summary>
+      <form @submit.prevent="exclude">
+        <label>Идентификатор участника
+          <input v-model="userId" name="user_id" required />
+        </label>
+        <button class="btn slim" type="submit" :disabled="busy">Исключить</button>
+      </form>
+      <p v-if="excluded" class="banner ok">Участник исключён.</p>
+    </details>
+    <p v-if="error" class="banner bad" role="alert">{{ error }}</p>
   </section>
 </template>
