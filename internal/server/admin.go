@@ -572,6 +572,7 @@ func (s *Server) moderateModule(w http.ResponseWriter, r *http.Request, p princi
 		writeMapped(w, err)
 		return
 	}
+	s.noteModule(id, status)
 	writeJSON(w, http.StatusOK, view)
 }
 

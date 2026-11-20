@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -45,41 +46,16 @@ func (s *Server) searchSongs(w http.ResponseWriter, r *http.Request) {
 		}
 		offset = n
 	}
-	songbookID := r.URL.Query().Get("songbook_id")
-	if songbookID != "" && !validUUID(songbookID) {
-		writeMapped(w, errRequest)
+	bookArg, dimArg, err := songSearchScope(r)
+	if err != nil {
+		writeMapped(w, err)
 		return
-	}
-	dimensionID := r.URL.Query().Get("dimension_id")
-	if dimensionID == "" {
-		dimensionID = r.URL.Query().Get("community_id")
-	}
-	if dimensionID != "" && !validUUID(dimensionID) {
-		writeMapped(w, errRequest)
-		return
-	}
-	var bookArg any
-	if songbookID != "" {
-		bookArg = songbookID
-	}
-	var dimArg any
-	if dimensionID != "" {
-		dimArg = dimensionID
 	}
 	rows, err := s.db.Query(r.Context(), `
 		SELECT s.songbook_id::text, s.fbid, s.title, b.title, b.dimension_id::text, b.status
 		FROM songs s
 		JOIN songbooks b ON b.id = s.songbook_id
-		WHERE NOT s.deleted
-		  AND ($2::uuid IS NULL OR s.songbook_id = $2::uuid)
-		  AND ($3::uuid IS NULL OR b.dimension_id = $3::uuid)
-		  AND (
-		        b.status = 'approved'
-		        OR EXISTS (
-		            SELECT 1 FROM memberships m
-		            WHERE m.dimension_id = b.dimension_id AND m.user_id = $4 AND NOT m.excluded
-		        )
-		      )
+		WHERE `+songAccessWhere("$2", "$3", "$4")+`
 		  AND (
 		        s.title ILIKE $1 ESCAPE '\'
 		        OR s.alt_title ILIKE $1 ESCAPE '\'
@@ -111,6 +87,42 @@ func (s *Server) searchSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"songs": hits})
+}
+
+// songAccessWhere — то же правило, что у поиска по словам и по смыслу:
+// песня не удалена, сборник свой (пользователь не исключён) или одобрен.
+func songAccessWhere(bookArg, dimArg, userArg string) string {
+	return fmt.Sprintf(`NOT s.deleted
+		  AND (%s::uuid IS NULL OR s.songbook_id = %s::uuid)
+		  AND (%s::uuid IS NULL OR b.dimension_id = %s::uuid)
+		  AND (
+		        b.status = 'approved'
+		        OR EXISTS (
+		            SELECT 1 FROM memberships m
+		            WHERE m.dimension_id = b.dimension_id AND m.user_id = %s AND NOT m.excluded
+		        )
+		      )`, bookArg, bookArg, dimArg, dimArg, userArg)
+}
+
+func songSearchScope(r *http.Request) (book any, dim any, err error) {
+	songbookID := strings.TrimSpace(r.URL.Query().Get("songbook_id"))
+	if songbookID != "" {
+		if !validUUID(songbookID) {
+			return nil, nil, errRequest
+		}
+		book = songbookID
+	}
+	dimensionID := strings.TrimSpace(r.URL.Query().Get("dimension_id"))
+	if dimensionID == "" {
+		dimensionID = strings.TrimSpace(r.URL.Query().Get("community_id"))
+	}
+	if dimensionID != "" {
+		if !validUUID(dimensionID) {
+			return nil, nil, errRequest
+		}
+		dim = dimensionID
+	}
+	return book, dim, nil
 }
 
 func likeContains(q string) string {

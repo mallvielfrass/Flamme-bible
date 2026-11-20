@@ -8,8 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        # Тест миграции сравнивает server_version с префиксом 16.3. Тег 16-alpine ему не подходит.
-        image: postgres:16.3-alpine
+        # Схема создаёт расширение vector и индекс HNSW. Образ pgvector основан на PostgreSQL 16.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: flammebible
           POSTGRES_DB: flammebible

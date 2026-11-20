@@ -4,6 +4,7 @@ import { api, apiBlob, explain } from '../api'
 import { clipPlanText, decodePlanText, importEncodingNotice } from '../checks'
 import {
   bibleItem,
+  bibleItemFromPassage,
   exportFileName,
   importFormatFromName,
   itemKindLabel,
@@ -13,6 +14,7 @@ import {
   textItem,
 } from '../planItems'
 import { useSessionStore } from '../stores/session'
+import BibleSearch from '../components/BibleSearch.vue'
 import SongSearch from '../components/SongSearch.vue'
 
 const session = useSessionStore()
@@ -112,6 +114,15 @@ async function openPlan(plan) {
 function addSong(hit) {
   try {
     editor.value.items.push(songItem(hit))
+    error.value = ''
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
+function addPassage(hit) {
+  try {
+    editor.value.items.push(bibleItemFromPassage(hit))
     error.value = ''
   } catch (err) {
     error.value = err.message
@@ -395,7 +406,10 @@ watch(scope, load, { immediate: true })
         <button type="button" class="tab" :class="{ on: addTab === 'text' }" @click="addTab = 'text'">Текст</button>
       </div>
       <SongSearch v-if="addTab === 'song'" :token="session.token" picking @pick="addSong" />
-      <form v-else-if="addTab === 'bible'" @submit.prevent="addBible">
+      <div v-else-if="addTab === 'bible'">
+        <BibleSearch :token="session.token" @pick="addPassage" />
+        <h3>Или укажите место вручную</h3>
+      <form @submit.prevent="addBible">
         <div class="fields">
           <label>Перевод
             <input v-model="bible.module_short_name" name="module_short_name" placeholder="RST" required />
@@ -421,6 +435,7 @@ watch(scope, load, { immediate: true })
         </label>
         <button class="btn slim primary" type="submit">Добавить стих</button>
       </form>
+      </div>
       <form v-else @submit.prevent="addText">
         <label>Заголовок
           <input v-model="note.caption" name="caption" />

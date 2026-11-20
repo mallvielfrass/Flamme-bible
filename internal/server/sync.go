@@ -190,6 +190,7 @@ func (s *Server) applyPush(ctx context.Context, p principal, dimID, bookID strin
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	s.noteAppliedSongs(bookID, prepared, results)
 	return results, nil
 }
 

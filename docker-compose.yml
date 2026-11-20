@@ -1,7 +1,7 @@
 services:
   db:
-    # Минимум — PostgreSQL 16. Для 17 и новее смените тег, например postgres:17-alpine.
-    image: postgres:16-alpine
+    # PostgreSQL 16 с расширением vector. Для другого мажора нужен образ pgvector той же версии.
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-flammebible}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
@@ -27,12 +27,34 @@ services:
       RELEASES_DIR: /data/releases
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       TRUST_PROXY: "1"
+      EMBED_URL: http://embed:80/embed
+      EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
     volumes:
       - media:/data/media
       - releases:/data/releases
     depends_on:
       db:
         condition: service_healthy
+      embed:
+        condition: service_started
+    restart: unless-stopped
+
+  embed:
+    # Локальная модель на CPU. Первый запуск скачивает веса, дальше они лежат в томе.
+    # Поиск по смыслу ходит только сюда. Для aarch64 замените тег на cpu-arm64-1.9.
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4
+    command:
+      - --model-id
+      - ${EMBED_MODEL:-intfloat/multilingual-e5-small}
+      - --dtype
+      - float32
+      # e5 усредняет токены. Без этого файла TEI для BERT берёт CLS, и поиск портится.
+      - --pooling
+      - mean
+    environment:
+      HUGGINGFACE_HUB_CACHE: /data
+    volumes:
+      - embedcache:/data
     restart: unless-stopped
 
   web:
@@ -49,3 +71,4 @@ volumes:
   pgdata:
   media:
   releases:
+  embedcache:

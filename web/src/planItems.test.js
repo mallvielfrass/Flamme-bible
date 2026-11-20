@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   bibleItem,
+  bibleItemFromPassage,
   exportFileName,
   importFormatFromName,
   moveItem,
@@ -32,6 +33,23 @@ describe('plan items', () => {
     expect(item.book).toBe(43)
     expect(item.module_short_name_second).toBe('BTI')
     expect(() => bibleItem({ module_short_name: 'Синод', reference: 'Ин. 3:16' })).toThrow(/латиница/)
+  })
+
+  it('adds a semantic bible passage as one plan item', () => {
+    const item = bibleItemFromPassage({
+      module_short_name: 'EX',
+      book: 1,
+      chapter: 2,
+      verse_start: 1,
+      verse_end: 2,
+      reference: 'Истории 2:1-2',
+      text: 'Царь признал вину.',
+    })
+    expect(item.kind).toBe('bible')
+    expect(item.module_short_name).toBe('EX')
+    expect(item.verse).toBe(1)
+    expect(item.reference).toBe('Истории 2:1-2')
+    expect(item.quote).toBe('Царь признал вину.')
   })
 
   it('requires some text for a note and moves items', () => {
