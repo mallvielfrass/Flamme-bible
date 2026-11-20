@@ -14,12 +14,12 @@ import (
 )
 
 const (
-	embedDim = 384
+	embedDim = 312
 	// CPU-сборка text-embeddings-inference не берёт пачку больше 8 текстов.
 	embedBatch        = 8
 	embedPassage      = "passage"
 	embedQuery        = "query"
-	defaultEmbedModel = "intfloat/multilingual-e5-small"
+	defaultEmbedModel = "cointegrated/rubert-tiny2"
 )
 
 // Embedder считает векторы локальной модели. kind — query или passage:

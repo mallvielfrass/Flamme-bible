@@ -271,7 +271,7 @@ func TestHTTPEmbedderPrefixes(t *testing.T) {
 	if got := body["inputs"].([]any)[0]; got != "passage: текст песни" {
 		t.Fatalf("отрывок %#v", body)
 	}
-	plain := NewHTTPEmbedder(srv.URL, "bge-m3")
+	plain := NewHTTPEmbedder(srv.URL, defaultEmbedModel)
 	if _, err := plain.Embed(context.Background(), embedPassage, []string{"текст"}); err != nil {
 		t.Fatal(err)
 	}

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -68,4 +69,109 @@ func TestMigrateTwice(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("повторная миграция не сохранила пользователя: %d", n)
 	}
+}
+
+func TestEmbeddingDimensionReset(t *testing.T) {
+	reset(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	dimID := uuid.NewString()
+	bookID := uuid.NewString()
+	moduleID := uuid.NewString()
+	if _, err := testPool.Exec(ctx, `INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')`, userID, "dim@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `INSERT INTO dimensions (id, kind) VALUES ($1, 'personal')`, dimID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `INSERT INTO songbooks (id, dimension_id, fbid, header_template) VALUES ($1, $2, 'book', '{}')`, bookID, dimID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `INSERT INTO songs (songbook_id, fbid, parts, revision) VALUES ($1, 'song', '[]', 1)`, bookID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `INSERT INTO modules (id, owner_user_id, short_name) VALUES ($1, $2, 'RST')`, moduleID, userID); err != nil {
+		t.Fatal(err)
+	}
+	for _, index := range []string{"song_embeddings_hnsw", "bible_passages_hnsw"} {
+		if _, err := testPool.Exec(ctx, `DROP INDEX IF EXISTS `+index); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := testPool.Exec(ctx, `ALTER TABLE song_embeddings ALTER COLUMN embedding TYPE vector(384)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `ALTER TABLE bible_passages ALTER COLUMN embedding TYPE vector(384)`); err != nil {
+		t.Fatal(err)
+	}
+	old := vectorOnes(384)
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO song_embeddings (songbook_id, fbid, model, text_hash, embedding)
+		VALUES ($1, 'song', 'old', 'hash', $2::vector)
+	`, bookID, old); err != nil {
+		t.Fatal(err)
+	}
+	passageID := uuid.NewString()
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO bible_passages (
+			id, module_id, book, chapter, verse_start, verse_end, reference, body, model, text_hash, embedding
+		) VALUES ($1, $2, 1, 1, 1, 1, 'Быт 1:1', 'текст', 'old', 'hash', $3::vector)
+	`, passageID, moduleID, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, testPool); err != nil {
+		t.Fatal(err)
+	}
+	if dim := columnDim(t, "song_embeddings"); dim != embedDim {
+		t.Fatalf("песни: размерность %d", dim)
+	}
+	if dim := columnDim(t, "bible_passages"); dim != embedDim {
+		t.Fatalf("отрывки: размерность %d", dim)
+	}
+	var songs, passages int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM song_embeddings`).Scan(&songs); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM bible_passages`).Scan(&passages); err != nil {
+		t.Fatal(err)
+	}
+	if songs != 0 || passages != 0 {
+		t.Fatalf("старые векторы остались: песни %d, отрывки %d", songs, passages)
+	}
+	fresh := vectorOnes(embedDim)
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO song_embeddings (songbook_id, fbid, model, text_hash, embedding)
+		VALUES ($1, 'song', 'new', 'hash', $2::vector)
+	`, bookID, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, testPool); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM song_embeddings`).Scan(&songs); err != nil {
+		t.Fatal(err)
+	}
+	if songs != 1 {
+		t.Fatalf("повторная миграция стерла актуальный вектор: %d", songs)
+	}
+}
+
+func columnDim(t *testing.T, table string) int {
+	t.Helper()
+	var dim int
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT atttypmod FROM pg_attribute
+		WHERE attrelid = $1::regclass AND attname = 'embedding' AND NOT attisdropped
+	`, table).Scan(&dim); err != nil {
+		t.Fatal(err)
+	}
+	return dim
+}
+
+func vectorOnes(n int) string {
+	parts := make([]string, n)
+	for i := range parts {
+		parts[i] = "1"
+	}
+	return "[" + strings.Join(parts, ",") + "]"
 }

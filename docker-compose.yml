@@ -27,32 +27,54 @@ services:
       RELEASES_DIR: /data/releases
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       TRUST_PROXY: "1"
-      EMBED_URL: http://embed:80/embed
-      EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
+      # Пусто — смысловой поиск выключен. Включение: EMBED_URL и профиль semantic.
+      EMBED_URL: ${EMBED_URL:-}
+      EMBED_MODEL: ${EMBED_MODEL:-cointegrated/rubert-tiny2}
     volumes:
       - media:/data/media
       - releases:/data/releases
     depends_on:
       db:
         condition: service_healthy
-      embed:
-        condition: service_started
     restart: unless-stopped
 
   embed:
-    # Локальная модель на CPU. Первый запуск скачивает веса, дальше они лежат в томе.
-    # Поиск по смыслу ходит только сюда. Для aarch64 замените тег на cpu-arm64-1.9.
+    # Не входит в обычный запуск. В .env: COMPOSE_PROFILES=semantic и EMBED_URL=http://embed:80/embed.
+    # Первый запуск скачивает веса в том embedcache. Для aarch64 замените тег на cpu-arm64-1.9.
+    profiles: ["semantic"]
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4
     command:
       - --model-id
-      - ${EMBED_MODEL:-intfloat/multilingual-e5-small}
+      - ${EMBED_MODEL:-cointegrated/rubert-tiny2}
       - --dtype
       - float32
-      # e5 усредняет токены. Без этого файла TEI для BERT берёт CLS, и поиск портится.
+      # Карточка rubert-tiny2 берёт вектор из токена CLS. Нормализацию включает запрос.
       - --pooling
-      - mean
+      - cls
+      # В --help 1.9.4 токенизаторов по умолчанию столько, сколько ядер видит процесс.
+      - --tokenization-workers
+      - ${EMBED_CPUS:-1}
+      # 512 и 32 — значения по умолчанию. Пачка 8 совпадает с пределом ONNX и с клиентом.
+      # Меньше 8 запросов сразу дают 429 на эту пачку. --max-batch-requests TEI всё равно
+      # подменяет пределом бэкенда (для ONNX это 8), поэтому флаг не задан.
+      - --max-concurrent-requests
+      - "8"
+      - --max-batch-tokens
+      - "2048"
+      - --max-client-batch-size
+      - "8"
     environment:
       HUGGINGFACE_HUB_CACHE: /data
+      # Образ cpu-1.9.4 сам ставит RAYON_NUM_THREADS=8 и связан с libiomp5 (MKL).
+      # Отдельного флага числа потоков ONNX Runtime в --help нет: их режет cpus.
+      OMP_NUM_THREADS: ${EMBED_CPUS:-1}
+      MKL_NUM_THREADS: ${EMBED_CPUS:-1}
+      RAYON_NUM_THREADS: ${EMBED_CPUS:-1}
+      MKL_DYNAMIC: "FALSE"
+      KMP_BLOCKTIME: "0"
+    cpus: ${EMBED_CPUS:-1}
+    # Холодный старт занимает около 690 МиБ. 512m процесс убивает, 768m проходит.
+    mem_limit: ${EMBED_MEMORY:-768m}
     volumes:
       - embedcache:/data
     restart: unless-stopped
