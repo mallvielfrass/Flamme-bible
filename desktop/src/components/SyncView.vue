@@ -39,10 +39,13 @@ const emit = defineEmits<{
   setEncoding: [boolean];
 }>();
 
+const VISIOBIBLE_OPEN = "Закройте VisioBible и нажмите „Повторить“";
+
 const songs = computed(() => groupRows(props.preview?.songs ?? []));
 const plans = computed(() => groupRows(props.preview?.plans ?? []));
 const conflictsLeft = computed(() => (props.preview?.songs ?? []).filter((row) => row.action === "conflict").length
   + (props.preview?.plans ?? []).filter((row) => row.action === "conflict").length);
+const visiobibleOpen = computed(() => props.error === VISIOBIBLE_OPEN);
 </script>
 
 <template>
@@ -89,7 +92,7 @@ const conflictsLeft = computed(() => (props.preview?.songs ?? []).filter((row) =
       <EncodingNotice :plans="scan?.plans ?? []" @repair="emit('repair', $event)" />
       <button class="btn" type="button" :disabled="busy !== '' || !settings.logged_in" @click="emit('refresh')">Показать, что изменится</button>
       <p v-if="busy === 'preview'" class="hint">Смотрим, что изменилось…</p>
-      <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="error && !visiobibleOpen" class="error">{{ error }}</p>
       <p v-for="warning in preview?.warnings ?? []" :key="warning" class="error">{{ warning }}</p>
       <template v-if="preview">
         <div class="group">
@@ -150,6 +153,8 @@ const conflictsLeft = computed(() => (props.preview?.songs ?? []).filter((row) =
       </label>
       <button class="btn primary" type="button" :disabled="busy !== '' || !preview || conflictsLeft > 0" @click="emit('start')">Начать синхронизацию</button>
       <p v-if="conflictsLeft" class="error">Сначала выберите, что делать с конфликтами.</p>
+      <p v-if="visiobibleOpen" class="error">{{ error }}</p>
+      <button v-if="visiobibleOpen" class="btn primary" type="button" :disabled="busy !== ''" @click="emit('start')">Повторить</button>
       <p v-if="busy === 'sync'" class="hint">Идёт синхронизация…</p>
       <div v-if="progress" class="bar" role="progressbar" :aria-valuenow="progress.percentage" aria-valuemin="0" aria-valuemax="100">
         <span :style="{ width: progress.percentage + '%' }"></span>
