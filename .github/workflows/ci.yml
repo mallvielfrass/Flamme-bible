@@ -1,0 +1,95 @@
+name: ci
+
+on:
+  workflow_dispatch:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Тест миграции сравнивает server_version с префиксом 16.3. Тег 16-alpine ему не подходит.
+        image: postgres:16.3-alpine
+        env:
+          POSTGRES_USER: flammebible
+          POSTGRES_DB: flammebible
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flammebible -d flammebible"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://flammebible@localhost:5432/flammebible?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+      - name: vet
+        run: go vet ./...
+      - name: build
+        run: go build ./...
+      - name: test
+        run: go test -p 1 ./...
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm test --if-present
+      - run: npm run build
+
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        if: hashFiles('desktop/src-tauri/Cargo.toml') != ''
+        with:
+          components: rustfmt
+      - name: cargo fmt
+        if: hashFiles('desktop/src-tauri/Cargo.toml') != ''
+        run: cargo fmt --check --manifest-path desktop/src-tauri/Cargo.toml
+      - name: tauri dependencies
+        if: hashFiles('desktop/src-tauri/Cargo.toml') != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            libxdo-dev \
+            file
+      - name: cargo test
+        if: hashFiles('desktop/src-tauri/Cargo.toml') != ''
+        run: cargo test --manifest-path desktop/src-tauri/Cargo.toml
+      - uses: actions/setup-node@v4
+        if: hashFiles('desktop/src-tauri/Cargo.toml') != ''
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: frontend
+        if: hashFiles('desktop/src-tauri/Cargo.toml') != ''
+        working-directory: desktop
+        run: |
+          npm ci
+          npm run build
