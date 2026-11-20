@@ -48,7 +48,7 @@ func (s *Server) requestPublish(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
-	if _, err := tx.Exec(ctx, `UPDATE songbooks SET publish_requested = true WHERE id = $1`, id); err != nil {
+	if err := markSongbookPending(ctx, tx, id); err != nil {
 		writeMapped(w, err)
 		return
 	}
@@ -113,7 +113,15 @@ func (s *Server) decidePublish(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, errJSON("запрос"))
 		return
 	}
-	if _, err := tx.Exec(ctx, `UPDATE songbooks SET public = $2, publish_requested = false WHERE id = $1`, id, *body.Public); err != nil {
+	status := "rejected"
+	if *body.Public {
+		status = "approved"
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE songbooks
+		SET public = $2, publish_requested = false, status = $3, reviewed_by = $4, reviewed_at = now()
+		WHERE id = $1
+	`, id, *body.Public, status, p.UserID); err != nil {
 		writeMapped(w, err)
 		return
 	}
@@ -236,7 +244,7 @@ func (s *Server) hideCatalogCopy(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(ctx)
 	var dimID string
 	err = tx.QueryRow(ctx, `
-		SELECT dimension_id::text FROM songbooks WHERE id = $1 AND public
+		SELECT dimension_id::text FROM songbooks WHERE id = $1 AND public AND status = 'approved'
 	`, body.AgainstSongbook).Scan(&dimID)
 	if err == pgx.ErrNoRows {
 		writeMapped(w, errNotFound)
@@ -286,7 +294,7 @@ const publicSongsSQL = `
 	SELECT s.songbook_id::text, s.fbid, s.title, s.parts
 	FROM songs s
 	JOIN songbooks b ON b.id = s.songbook_id
-	WHERE b.public AND NOT s.deleted
+	WHERE b.public AND b.status = 'approved' AND NOT s.deleted
 	ORDER BY s.songbook_id, s.fbid`
 
 func (s *Server) publicSongs(ctx context.Context) ([]catalogSong, error) {

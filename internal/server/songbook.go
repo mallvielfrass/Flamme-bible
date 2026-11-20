@@ -3,10 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sort"
+	"time"
 
-	"errors"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -36,6 +37,10 @@ type songbookView struct {
 	Hidden           bool           `json:"hidden"`
 	PublishRequested bool           `json:"publish_requested"`
 	Public           bool           `json:"public"`
+	Status           string         `json:"status"`
+	ModerationNote   string         `json:"moderation_note"`
+	ReviewedBy       *string        `json:"reviewed_by"`
+	ReviewedAt       *time.Time     `json:"reviewed_at"`
 }
 
 func scanBook(row pgx.Row) (songbookView, error) {
@@ -45,7 +50,7 @@ func scanBook(row pgx.Row) (songbookView, error) {
 	err := row.Scan(
 		&view.ID, &view.DimensionID, &view.FBID, &view.Title, &view.ShortName,
 		&view.Publisher, &view.RevisionDate, &view.Comment, &header, &parent, &view.Hidden,
-		&view.PublishRequested, &view.Public,
+		&view.PublishRequested, &view.Public, &view.Status, &view.ModerationNote, &view.ReviewedBy, &view.ReviewedAt,
 	)
 	if err != nil {
 		return songbookView{}, err
@@ -57,7 +62,7 @@ func scanBook(row pgx.Row) (songbookView, error) {
 	return view, nil
 }
 
-const bookCols = `id::text, dimension_id::text, fbid, title, short_name, publisher, revision_date, comment, header_template, parent_id::text, hidden, publish_requested, public`
+const bookCols = `id::text, dimension_id::text, fbid, title, short_name, publisher, revision_date, comment, header_template, parent_id::text, hidden, publish_requested, public, status, moderation_note, reviewed_by::text, reviewed_at`
 
 func (s *Server) createSongbook(w http.ResponseWriter, r *http.Request) {
 	p, err := s.principal(r)

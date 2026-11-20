@@ -23,26 +23,22 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "DATABASE_URL не задан")
 		os.Exit(1)
 	}
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, cleanup, err := OpenTestPool(context.Background(), url)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	if err := Migrate(ctx, pool); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	testPool = pool
 	code := m.Run()
-	pool.Close()
+	cleanup()
 	os.Exit(code)
 }
 
 func reset(t *testing.T) {
 	t.Helper()
 	_, err := testPool.Exec(context.Background(), `
-		TRUNCATE song_hides, conflicts, operation_results, change_log, song_order, songs, songbooks,
+		TRUNCATE plan_items, plans, modules, client_releases, app_settings,
+		         song_hides, conflicts, operation_results, change_log, song_order, songs, songbooks,
 		         invites, session_tokens, session_families, devices, memberships, sync_counters,
 		         dimensions, users
 	`)

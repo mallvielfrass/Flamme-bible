@@ -20,6 +20,8 @@ var (
 	errOpBody       = errors.New("operation_id")
 	errReload       = errors.New("reload")
 	errMember       = errors.New("уже участник")
+	errConflict     = errors.New("конфликт")
+	errRequest      = errors.New("запрос")
 )
 
 type Server struct {
@@ -38,6 +40,7 @@ func New(db *pgxpool.Pool) *Server {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	s.mountMVP(mux)
 	mux.HandleFunc("POST /register", s.register)
 	mux.HandleFunc("POST /login", s.login)
 	mux.HandleFunc("POST /refresh", s.refresh)
@@ -58,7 +61,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /songbooks/{id}/publish/decision", s.decidePublish)
 	mux.HandleFunc("GET /catalog/matches", s.catalogMatches)
 	mux.HandleFunc("POST /catalog/hide", s.hideCatalogCopy)
-	return http.MaxBytesHandler(mux, maxBody)
+	return s.dispatch(mux)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -93,6 +96,10 @@ func writeMapped(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, errJSON("reload"))
 	case errors.Is(err, errMember):
 		writeJSON(w, http.StatusConflict, errJSON("уже участник"))
+	case errors.Is(err, errConflict):
+		writeJSON(w, http.StatusConflict, errJSON("конфликт"))
+	case errors.Is(err, errRequest):
+		writeJSON(w, http.StatusBadRequest, errJSON("запрос"))
 	default:
 		log.Printf("server: %v", err)
 		writeJSON(w, http.StatusInternalServerError, errJSON("ошибка"))

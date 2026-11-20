@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"flammebible/internal/server"
@@ -22,27 +21,29 @@ import (
 )
 
 var (
-	poolOnce sync.Once
-	poolVal  *pgxpool.Pool
-	poolErr  error
+	poolVal     *pgxpool.Pool
+	poolCleanup func()
+	poolErr     error
 )
+
+func TestMain(m *testing.M) {
+	if url := os.Getenv("DATABASE_URL"); url != "" {
+		poolVal, poolCleanup, poolErr = server.OpenTestPool(context.Background(), url)
+	}
+	code := m.Run()
+	if poolCleanup != nil {
+		poolCleanup()
+	}
+	os.Exit(code)
+}
 
 func dbPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	poolOnce.Do(func() {
-		url := os.Getenv("DATABASE_URL")
-		if url == "" {
-			poolErr = errors.New("DATABASE_URL не задан")
-			return
-		}
-		poolVal, poolErr = pgxpool.New(context.Background(), url)
-		if poolErr != nil {
-			return
-		}
-		poolErr = server.Migrate(context.Background(), poolVal)
-	})
 	if poolErr != nil {
 		t.Fatal(poolErr)
+	}
+	if poolVal == nil {
+		t.Fatal("DATABASE_URL не задан")
 	}
 	return poolVal
 }
@@ -50,7 +51,8 @@ func dbPool(t *testing.T) *pgxpool.Pool {
 func resetDB(t *testing.T) {
 	t.Helper()
 	_, err := dbPool(t).Exec(context.Background(), `
-		TRUNCATE song_hides, conflicts, operation_results, change_log, song_order, songs, songbooks,
+		TRUNCATE plan_items, plans, modules, client_releases, app_settings,
+		         song_hides, conflicts, operation_results, change_log, song_order, songs, songbooks,
 		         invites, session_tokens, session_families, devices, memberships, sync_counters,
 		         dimensions, users
 	`)
