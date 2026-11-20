@@ -1,4 +1,5 @@
 mod config;
+mod mojibake;
 mod paths;
 mod plans;
 mod remote;
@@ -350,10 +351,16 @@ async fn start_sync(app: tauri::AppHandle, request: StartRequest) -> Result<Sync
             step_index += 1;
             let path = Path::new(&plan.path);
             let existed = path.is_file();
+            let bytes = plans::render_file(path, &plan.items, &plan.title, &cfg.plan_encoding)?;
             if existed {
                 let _ = std::fs::copy(path, visio::backup_path(path));
             }
-            plans::write_items(path, &plan.items, &plan.title)?;
+            if let Some(parent) = path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+                }
+            }
+            std::fs::write(path, bytes).map_err(|err| err.to_string())?;
             if existed {
                 backups.push(visio::backup_path(path).display().to_string());
                 notes.push(format!(
@@ -596,13 +603,46 @@ fn create_plan(name: String, items: Vec<PlanItem>) -> Result<visio::PlanInfo, St
     if name.is_empty() {
         return Err("Укажите название плана".into());
     }
-    let path = plans::write_new_plan(Path::new(&scan.plans_dir), &name, &items)?;
+    let path = plans::write_new_plan(
+        Path::new(&scan.plans_dir),
+        &name,
+        &items,
+        &cfg.plan_encoding,
+    )?;
     Ok(visio::PlanInfo {
         path: path.display().to_string(),
         name,
         kind: plans::file_format(&path).to_string(),
         items,
+        mojibake: false,
+        encoding_warning: String::new(),
+        preview_before: String::new(),
+        preview_after: String::new(),
     })
+}
+
+#[tauri::command]
+fn set_plan_encoding(windows1251: bool) -> Result<config::PublicSettings, String> {
+    let (dir, mut cfg) = load_config()?;
+    cfg.plan_encoding = if windows1251 {
+        "windows-1251".into()
+    } else {
+        String::new()
+    };
+    config::save(&dir, &cfg)?;
+    Ok(cfg.public())
+}
+
+#[tauri::command]
+fn repair_plan_encoding(path: String) -> Result<visio::Scan, String> {
+    let (_, cfg) = load_config()?;
+    if cfg.visio_path.is_empty() {
+        return Err("Сначала выберите папку VisioBible".into());
+    }
+    let file = Path::new(&path);
+    let bytes = plans::repaired_utf8(file)?;
+    visio::replace_file(file, &bytes)?;
+    visio::open_location(Path::new(&cfg.visio_path))
 }
 
 #[tauri::command]
@@ -732,6 +772,8 @@ pub fn run() {
             preview_sync,
             start_sync,
             create_plan,
+            set_plan_encoding,
+            repair_plan_encoding,
             list_communities,
             pull_plan,
             delete_plan,

@@ -6,6 +6,7 @@ use quick_xml::Reader;
 use quick_xml::Writer;
 use serde::{Deserialize, Serialize};
 
+use crate::mojibake;
 use crate::text;
 
 /// Пункт плана в том виде, в каком его принимает `POST /api/plans`.
@@ -71,19 +72,64 @@ pub struct PlanDef {
     pub items: Vec<PlanItem>,
 }
 
-pub fn read_history_file(path: &Path) -> Result<Vec<PlanItem>, String> {
-    let bytes = fs::read(path).map_err(|err| err.to_string())?;
-    parse_history(&text::decode_text(&bytes))
+pub struct LoadedText {
+    pub text: String,
+    pub notice: Option<mojibake::Notice>,
 }
 
-pub fn read_vplt_file(path: &Path) -> Result<Vec<PlanItem>, String> {
+pub fn load_text(path: &Path) -> Result<LoadedText, String> {
     let bytes = fs::read(path).map_err(|err| err.to_string())?;
-    parse_vplt(&text::decode_text(&bytes))
+    let text = text::decode_text(&bytes);
+    Ok(LoadedText {
+        notice: mojibake::notice(&text),
+        text,
+    })
 }
 
-pub fn read_plan_def_file(path: &Path) -> Result<PlanDef, String> {
-    let bytes = fs::read(path).map_err(|err| err.to_string())?;
-    Ok(parse_plan_def(&text::decode_text(&bytes)))
+pub fn normalize_plan_encoding(value: &str) -> &'static str {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "windows-1251" | "cp1251" | "windows1251" => "windows-1251",
+        _ => "utf-8",
+    }
+}
+
+pub fn plan_file_bytes(text: &str, format: &str, encoding: &str) -> Result<Vec<u8>, String> {
+    let encoding = normalize_plan_encoding(encoding);
+    let body = if format == "vplt" || format == "history" {
+        with_xml_encoding(text, encoding)
+    } else {
+        text.to_string()
+    };
+    if encoding == "windows-1251" {
+        return mojibake::encode_windows_1251(&body);
+    }
+    Ok(body.into_bytes())
+}
+
+pub fn repaired_utf8(path: &Path) -> Result<Vec<u8>, String> {
+    let loaded = load_text(path)?;
+    let fixed = mojibake::repair(&loaded.text).ok_or("Кодировку чинить не нужно")?;
+    plan_file_bytes(&fixed, file_format(path), "utf-8")
+}
+
+fn with_xml_encoding(text: &str, encoding: &str) -> String {
+    let label = if encoding == "windows-1251" {
+        "windows-1251"
+    } else {
+        "UTF-8"
+    };
+    let decl = format!("<?xml version=\"1.0\" encoding=\"{label}\"?>");
+    let trimmed = text.trim_start_matches('\u{feff}');
+    if let Some(rest) = trimmed.strip_prefix("<?xml") {
+        if let Some(end) = rest.find("?>") {
+            let mut after = &rest[end + 2..];
+            if let Some(stripped) = after.strip_prefix('\n') {
+                after = stripped;
+            }
+            return format!("{decl}\n{after}");
+        }
+    }
+    format!("{decl}\n{text}")
 }
 
 /// `plan.vplt` keeps only Caption, Reference, Quote and Class.
@@ -284,8 +330,14 @@ pub fn write_plan_def(def: &PlanDef) -> String {
     out
 }
 
-pub fn write_items(path: &Path, items: &[PlanItem], title: &str) -> Result<(), String> {
-    let text_value = match file_format(path) {
+pub fn render_file(
+    path: &Path,
+    items: &[PlanItem],
+    title: &str,
+    encoding: &str,
+) -> Result<Vec<u8>, String> {
+    let format = file_format(path);
+    let text_value = match format {
         "history" => write_history(items)?,
         "plandef" => write_plan_def(&PlanDef {
             name: title.to_string(),
@@ -294,12 +346,22 @@ pub fn write_items(path: &Path, items: &[PlanItem], title: &str) -> Result<(), S
         }),
         _ => write_vplt(items)?,
     };
+    plan_file_bytes(&text_value, format, encoding)
+}
+
+pub fn write_items(
+    path: &Path,
+    items: &[PlanItem],
+    title: &str,
+    encoding: &str,
+) -> Result<(), String> {
+    let bytes = render_file(path, items, title, encoding)?;
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent).map_err(|err| err.to_string())?;
         }
     }
-    fs::write(path, text_value).map_err(|err| err.to_string())
+    fs::write(path, bytes).map_err(|err| err.to_string())
 }
 
 pub fn file_format(path: &Path) -> &'static str {
@@ -366,6 +428,7 @@ pub fn write_new_plan(
     dir: &Path,
     name: &str,
     items: &[PlanItem],
+    encoding: &str,
 ) -> Result<std::path::PathBuf, String> {
     fs::create_dir_all(dir).map_err(|err| err.to_string())?;
     let stem = file_stem(name);
@@ -380,7 +443,7 @@ pub fn write_new_plan(
     if path.exists() {
         return Err("Такой план уже есть".into());
     }
-    write_items(&path, items, name)?;
+    write_items(&path, items, name, encoding)?;
     Ok(path)
 }
 
@@ -723,7 +786,7 @@ fn ini_unescape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use encoding_rs::WINDOWS_1251;
+    use encoding_rs::{WINDOWS_1251, WINDOWS_1252};
 
     fn song() -> PlanItem {
         PlanItem {
@@ -830,6 +893,51 @@ mod tests {
             (43, 3, 16)
         );
         assert_eq!(parsed.items[1].quote, "строка\nвторая");
+    }
+
+    #[test]
+    fn windows_1251_write_matches_the_header_and_does_not_replace_the_file() {
+        let dir = crate::paths::TmpDir::new("plan-enc");
+        let path = dir.path.join("plan.vplt");
+        fs::write(&path, "старый").unwrap();
+        let mut accent = slide();
+        accent.quote = "café".into();
+        let err = write_items(&path, &[accent], "Служение", "windows-1251").unwrap_err();
+        assert!(err.contains("windows-1251"));
+        assert_eq!(fs::read(&path).unwrap(), "старый".as_bytes());
+
+        let plain = PlanItem {
+            kind: "text".into(),
+            caption: "Привет".into(),
+            quote: "мир".into(),
+            class: "-1".into(),
+            ..PlanItem::default()
+        };
+        write_items(&path, &[plain], "Служение", "windows-1251").unwrap();
+        let bytes = fs::read(&path).unwrap();
+        assert!(std::str::from_utf8(&bytes).is_err());
+        let text = text::decode_text(&bytes);
+        assert!(text.contains("encoding=\"windows-1251\""));
+        assert!(text.contains("Привет"));
+        assert!(!text.contains("encoding=\"UTF-8\""));
+
+        let mojibake = decode_mojibake("Привет");
+        let broken = dir.path.join("History.ini");
+        fs::write(
+            &broken,
+            format!("<VisioBibleJournal><Journal Name=\"Text\"><Item Caption=\"{mojibake}\" Quote=\"\" Class=\"-1\"/></Journal></VisioBibleJournal>"),
+        )
+        .unwrap();
+        let repaired = repaired_utf8(&broken).unwrap();
+        let repaired_text = String::from_utf8(repaired).unwrap();
+        assert!(repaired_text.contains("encoding=\"UTF-8\""));
+        assert!(repaired_text.contains("Привет"));
+        assert!(fs::read(&broken).unwrap().starts_with(b"<Visio"));
+    }
+
+    fn decode_mojibake(text: &str) -> String {
+        let (bytes, _, _) = WINDOWS_1252.decode(text.as_bytes());
+        bytes.into_owned()
     }
 
     #[test]

@@ -9,6 +9,7 @@ export interface Settings {
   user_id: string;
   dimension_id: string;
   role: string;
+  plan_windows1251: boolean;
 }
 
 export interface BibleBook {
@@ -25,7 +26,16 @@ export interface Scan {
   module_refs: string[];
   songbooks: { path: string; title: string; short_name: string; song_count: number; titles: string[]; error: string }[];
   bibles: { path: string; name: string; short_name: string; books: BibleBook[] }[];
-  plans: { path: string; name: string; kind: string; items: PlanItem[] }[];
+  plans: {
+    path: string;
+    name: string;
+    kind: string;
+    items: PlanItem[];
+    mojibake?: boolean;
+    encoding_warning?: string;
+    preview_before?: string;
+    preview_after?: string;
+  }[];
   plan_def: { name: string; module_short_name: string; module_short_name_second: string; journals: string[] };
 }
 
@@ -106,6 +116,8 @@ export const api = {
   version: () => invoke<string>("client_version"),
   loadSettings: () => invoke<Settings>("load_settings"),
   saveSettings: (server_url: string) => invoke<Settings>("save_settings", { server_url }),
+  setPlanEncoding: (windows1251: boolean) => invoke<Settings>("set_plan_encoding", { windows1251 }),
+  repairPlanEncoding: (path: string) => invoke<Scan>("repair_plan_encoding", { path }),
   register: (email: string, password: string) => invoke<Settings>("register", { email, password }),
   login: (email: string, password: string) => invoke<Settings>("login", { email, password }),
   logout: () => invoke<Settings>("logout"),
