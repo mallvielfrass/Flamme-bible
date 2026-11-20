@@ -1,0 +1,33 @@
+[package]
+name = "flammebible-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "FlammeBible desktop sync client for VisioBible"
+publish = false
+rust-version = "1.90"
+
+[lib]
+name = "flammebible_desktop"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+encoding_rs = "0.8"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+quick-xml = "0.38"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[profile.dev]
+debug = "line-tables-only"
+incremental = true
+
+[profile.dev.package."*"]
+debug = false
