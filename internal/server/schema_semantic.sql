@@ -1,4 +1,5 @@
 -- Смысловой поиск. vector(312) — модель cointegrated/rubert-tiny2.
+-- song_embeddings — одна строка на часть песни. Вектор на всю песню миграция удаляет.
 -- Колонка другого размера очищается при запуске сервера, затем нужен reindex.
 
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -6,10 +7,11 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS song_embeddings (
   songbook_id uuid NOT NULL,
   fbid text NOT NULL,
+  part_index int NOT NULL,
   model text NOT NULL,
   text_hash text NOT NULL,
   embedding vector(312) NOT NULL,
-  PRIMARY KEY (songbook_id, fbid),
+  PRIMARY KEY (songbook_id, fbid, part_index),
   FOREIGN KEY (songbook_id, fbid) REFERENCES songs (songbook_id, fbid) ON DELETE CASCADE
 );
 

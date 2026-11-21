@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -188,6 +190,76 @@ func TestSemanticSongs(t *testing.T) {
 	}
 }
 
+func TestSemanticSkipsHiddenSongbook(t *testing.T) {
+	emb := &countingEmbedder{}
+	srv, _ := newSemanticServer(t, emb)
+	owner := registerUser(t, srv, "owner@example.com", "secret-pass", nil)
+	kept := createBook(t, srv, owner.Token, owner.DimensionID, map[string]any{"fbid": "kept", "title": "Видимый"})
+	hidden := createBook(t, srv, owner.Token, owner.DimensionID, map[string]any{"fbid": "gone", "title": "Скрытый"})
+	rev := pushAt(t, srv, owner, kept.ID, 0, []testSong{
+		{"sea", "Тихая вода", "лодка вышла в открытое море", false},
+	})
+	pushAt(t, srv, owner, hidden.ID, rev, []testSong{
+		{"forgive", "После падения", "Бог даёт прощение тому, кто встал", false},
+	})
+
+	code, raw := api(t, srv, owner.Token, http.MethodGet, "/api/songs/semantic?q="+urlQuery("прощение")+"&limit=5", nil)
+	if code != http.StatusOK {
+		t.Fatalf("до скрытия %d %s", code, raw)
+	}
+	var seen bool
+	for _, hit := range semanticHits(t, raw) {
+		if hit.FBID == "forgive" && hit.SongbookID == hidden.ID {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatalf("до скрытия %+v", semanticHits(t, raw))
+	}
+	if _, err := testPool.Exec(context.Background(), `UPDATE songbooks SET hidden_at = now() WHERE id = $1`, hidden.ID); err != nil {
+		t.Fatal(err)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/songs/semantic?q="+urlQuery("прощение")+"&limit=5", nil)
+	if code != http.StatusOK {
+		t.Fatalf("скрытый %d %s", code, raw)
+	}
+	for _, hit := range semanticHits(t, raw) {
+		if hit.SongbookID == hidden.ID || hit.FBID == "forgive" {
+			t.Fatalf("скрытый сборник в выдаче %+v", hit)
+		}
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/songs/semantic?q="+urlQuery("море")+"&limit=5", nil)
+	if code != http.StatusOK {
+		t.Fatalf("видимый %d %s", code, raw)
+	}
+	hits := semanticHits(t, raw)
+	if len(hits) != 1 || hits[0].FBID != "sea" {
+		t.Fatalf("видимый сборник %+v", hits)
+	}
+	var rows int
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM song_embeddings WHERE fbid = 'forgive'`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("вектор скрытой песни удалён: %d", rows)
+	}
+	before := emb.Calls()
+	if _, err := testPool.Exec(context.Background(), `UPDATE songbooks SET hidden_at = NULL WHERE id = $1`, hidden.ID); err != nil {
+		t.Fatal(err)
+	}
+	if emb.Calls() != before {
+		t.Fatalf("возврат пересчитал векторы: %d -> %d", before, emb.Calls())
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/songs/semantic?q="+urlQuery("прощение")+"&limit=5", nil)
+	if code != http.StatusOK {
+		t.Fatalf("после возврата %d %s", code, raw)
+	}
+	hits = semanticHits(t, raw)
+	if len(hits) == 0 || hits[0].FBID != "forgive" || hits[0].SongbookID != hidden.ID {
+		t.Fatalf("после возврата %+v", hits)
+	}
+}
+
 type testSong struct {
 	fbid    string
 	title   string
@@ -207,6 +279,206 @@ func pushAt(t *testing.T, srv *httptest.Server, user authResp, bookID string, ba
 			},
 		}
 	}
+	return pushOps(t, srv, user, bookID, base, ops)
+}
+
+func semanticHits(t *testing.T, raw []byte) []semanticSongHit {
+	t.Helper()
+	var body struct {
+		Songs []semanticSongHit `json:"songs"`
+	}
+	mustJSON(t, raw, &body)
+	return body.Songs
+}
+
+func urlQuery(q string) string {
+	return url.QueryEscape(q)
+}
+
+func TestSongPartDrafts(t *testing.T) {
+	parts := []partDTO{
+		{Text: "  "},
+		{Text: "первый"},
+		{Text: "припев"},
+		{Text: "припев"},
+		{Text: " второй "},
+	}
+	drafts := songPartDrafts("Песня", parts)
+	if len(drafts) != 3 || drafts[0].index != 1 || drafts[1].index != 2 || drafts[2].index != 4 {
+		t.Fatalf("индексы %+v", drafts)
+	}
+	if drafts[0].text != "Песня\nпервый" || drafts[1].text != "Песня\nприпев" || drafts[2].text != "Песня\nвторой" {
+		t.Fatalf("тексты %+v", drafts)
+	}
+	bare := songPartDrafts("  ", []partDTO{{Text: "только текст"}})
+	if len(bare) != 1 || bare[0].text != "только текст" {
+		t.Fatalf("без названия %+v", bare)
+	}
+	long := strings.Repeat("я", songEmbedRunes)
+	got := songPartDrafts("Заголовок", []partDTO{{Text: long}})
+	if utf8.RuneCountInString(got[0].text) != songEmbedRunes+1 || !strings.HasPrefix(got[0].text, "Заголовок\n") || !strings.HasSuffix(got[0].text, "…") {
+		t.Fatalf("обрезка %d %q", utf8.RuneCountInString(got[0].text), got[0].text[:40])
+	}
+	if len(songPartDrafts("Название", []partDTO{{Text: ""}, {Text: " \n "}})) != 0 {
+		t.Fatal("пустые части попали в индекс")
+	}
+}
+
+func TestSongPartIndex(t *testing.T) {
+	emb := &countingEmbedder{}
+	srv, svc := newSemanticServer(t, emb)
+	owner := registerUser(t, srv, "owner@example.com", "secret-pass", nil)
+	book := createBook(t, srv, owner.Token, owner.DimensionID, map[string]any{"fbid": "book", "title": "Домашний"})
+	long := "прощение " + strings.Repeat("а", fragmentRunes)
+	parts := []string{
+		"обычный куплет",
+		"припев про открытое море",
+		"",
+		long,
+		"припев про открытое море",
+	}
+	rev := pushParts(t, srv, owner, book.ID, 0, "grace", "После падения", parts, false)
+	if emb.Calls() != 3 {
+		t.Fatalf("вызовов эмбеддера %d", emb.Calls())
+	}
+	if got := songPartIndexes(t, "grace"); !reflect.DeepEqual(got, []int{0, 1, 3}) {
+		t.Fatalf("индексы %v", got)
+	}
+
+	before := emb.Calls()
+	stats, err := svc.ReindexAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.SongsEmbedded != 0 || emb.Calls() != before {
+		t.Fatalf("повтор %+v calls %d", stats, emb.Calls())
+	}
+	rev = pushParts(t, srv, owner, book.ID, rev, "grace", "После падения", parts[:4], false)
+	if emb.Calls() != before || !reflect.DeepEqual(songPartIndexes(t, "grace"), []int{0, 1, 3}) {
+		t.Fatalf("снятый повтор пересчитан calls %d indexes %v", emb.Calls(), songPartIndexes(t, "grace"))
+	}
+
+	rev = pushParts(t, srv, owner, book.ID, rev, "grace", "После падения", []string{
+		"другой обычный куплет",
+		"припев про открытое море",
+		"",
+		long,
+		"припев про открытое море",
+	}, false)
+	if emb.Calls() != before+1 || !reflect.DeepEqual(songPartIndexes(t, "grace"), []int{0, 1, 3}) {
+		t.Fatalf("правка одной части calls %d indexes %v", emb.Calls(), songPartIndexes(t, "grace"))
+	}
+	before = emb.Calls()
+	rev = pushParts(t, srv, owner, book.ID, rev, "grace", "После падения", []string{
+		"другой обычный куплет",
+		long,
+	}, false)
+	if emb.Calls() != before+1 || !reflect.DeepEqual(songPartIndexes(t, "grace"), []int{0, 1}) {
+		t.Fatalf("снятая часть calls %d indexes %v", emb.Calls(), songPartIndexes(t, "grace"))
+	}
+
+	rev = pushParts(t, srv, owner, book.ID, rev, "quiet", "Тишина", []string{"просто слова"}, false)
+	code, raw := api(t, srv, owner.Token, http.MethodGet, "/api/songs/semantic?q="+urlQuery("прощение")+"&limit=10", nil)
+	if code != http.StatusOK {
+		t.Fatalf("поиск %d %s", code, raw)
+	}
+	hits := semanticHits(t, raw)
+	if len(hits) != 2 || hits[0].FBID != "grace" || hits[1].FBID != "quiet" {
+		t.Fatalf("схлопывание %+v", hits)
+	}
+	if !strings.HasPrefix(hits[0].Fragment, "прощение") || strings.Contains(hits[0].Fragment, "обычный") {
+		t.Fatalf("фрагмент %q", hits[0].Fragment)
+	}
+	if utf8.RuneCountInString(hits[0].Fragment) != fragmentRunes+1 || !strings.HasSuffix(hits[0].Fragment, "…") {
+		t.Fatalf("обрезка фрагмента %d %q", utf8.RuneCountInString(hits[0].Fragment), hits[0].Fragment)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/songs/semantic?q="+urlQuery("море")+"&limit=10", nil)
+	if code != http.StatusOK {
+		t.Fatalf("море %d %s", code, raw)
+	}
+	for _, hit := range semanticHits(t, raw) {
+		if strings.Contains(hit.Fragment, "море") {
+			t.Fatalf("снятый припев остался %+v", hit)
+		}
+	}
+
+	rev = pushParts(t, srv, owner, book.ID, rev, "grace", "После падения", []string{
+		"другой обычный куплет",
+		"припев про открытое море",
+		long,
+	}, false)
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/songs/semantic?q="+urlQuery("море")+"&limit=1", nil)
+	if code != http.StatusOK {
+		t.Fatalf("море снова %d %s", code, raw)
+	}
+	hits = semanticHits(t, raw)
+	if len(hits) != 1 || hits[0].FBID != "grace" || !strings.Contains(hits[0].Fragment, "море") || strings.Contains(hits[0].Fragment, "прощение") {
+		t.Fatalf("фрагмент припева %+v", hits)
+	}
+
+	code, raw = api(t, srv, owner.Token, http.MethodPost, "/api/songbooks/"+book.ID+"/sections", map[string]any{"title": "Тихие"})
+	if code != http.StatusOK {
+		t.Fatalf("раздел %d %s", code, raw)
+	}
+	var section sectionView
+	mustJSON(t, raw, &section)
+	code, raw = api(t, srv, owner.Token, http.MethodPut, "/api/sections/"+section.ID+"/songs", map[string]any{"fbids": []string{"quiet"}})
+	if code != http.StatusOK {
+		t.Fatalf("состав %d %s", code, raw)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/songs/semantic?q="+urlQuery("прощение")+"&section_id="+section.ID, nil)
+	if code != http.StatusOK {
+		t.Fatalf("раздел поиск %d %s", code, raw)
+	}
+	hits = semanticHits(t, raw)
+	if len(hits) != 1 || hits[0].FBID != "quiet" || hits[0].SectionTitle != "Тихие" {
+		t.Fatalf("фильтр раздела %+v", hits)
+	}
+
+	if _, err := testPool.Exec(context.Background(), `DELETE FROM song_embeddings`); err != nil {
+		t.Fatal(err)
+	}
+	stats, err = svc.ReindexAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.SongsEmbedded == 0 || !reflect.DeepEqual(songPartIndexes(t, "grace"), []int{0, 1, 2}) {
+		t.Fatalf("сборка после очистки %+v %v", stats, songPartIndexes(t, "grace"))
+	}
+	if _, err := testPool.Exec(context.Background(), `DELETE FROM song_embeddings`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	svc.StartIndexer(ctx)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if reflect.DeepEqual(songPartIndexes(t, "grace"), []int{0, 1, 2}) && len(songPartIndexes(t, "quiet")) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("старт не собрал части grace=%v quiet=%v", songPartIndexes(t, "grace"), songPartIndexes(t, "quiet"))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func pushParts(t *testing.T, srv *httptest.Server, user authResp, bookID string, base int64, fbid, title string, texts []string, deleted bool) int64 {
+	t.Helper()
+	parts := make([]any, len(texts))
+	for i, text := range texts {
+		parts[i] = map[string]any{"kind": "Куплет", "text": text, "align": 0}
+	}
+	return pushOps(t, srv, user, bookID, base, []any{map[string]any{
+		"operation_id": uuid.NewString(),
+		"song": map[string]any{
+			"fbid": fbid, "title": title, "deleted": deleted, "parts": parts,
+		},
+	}})
+}
+
+func pushOps(t *testing.T, srv *httptest.Server, user authResp, bookID string, base int64, ops []any) int64 {
+	t.Helper()
 	code, raw := api(t, srv, user.Token, http.MethodPost, "/dimensions/"+user.DimensionID+"/songbooks/"+bookID+"/push", map[string]any{
 		"base_revision": base,
 		"operations":    ops,
@@ -218,7 +490,7 @@ func pushAt(t *testing.T, srv *httptest.Server, user authResp, bookID string, ba
 		Results []opResult `json:"results"`
 	}
 	mustJSON(t, raw, &body)
-	if len(body.Results) != len(songs) {
+	if len(body.Results) != len(ops) {
 		t.Fatalf("результаты %+v", body.Results)
 	}
 	var rev int64
@@ -233,17 +505,25 @@ func pushAt(t *testing.T, srv *httptest.Server, user authResp, bookID string, ba
 	return rev
 }
 
-func semanticHits(t *testing.T, raw []byte) []semanticSongHit {
+func songPartIndexes(t *testing.T, fbid string) []int {
 	t.Helper()
-	var body struct {
-		Songs []semanticSongHit `json:"songs"`
+	rows, err := testPool.Query(context.Background(), `SELECT part_index FROM song_embeddings WHERE fbid = $1 ORDER BY part_index`, fbid)
+	if err != nil {
+		t.Fatal(err)
 	}
-	mustJSON(t, raw, &body)
-	return body.Songs
-}
-
-func urlQuery(q string) string {
-	return url.QueryEscape(q)
+	defer rows.Close()
+	var out []int
+	for rows.Next() {
+		var index int
+		if err := rows.Scan(&index); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, index)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 func TestHTTPEmbedderPrefixes(t *testing.T) {

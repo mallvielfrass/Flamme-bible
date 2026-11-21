@@ -381,6 +381,9 @@ h1, h2, h3, .brand, .auth-brand, .space-name, .title-serif, .quote {
 
 .hint { color: #6d6458; font-size: 0.95rem; margin: 0.2rem 0 0.7rem; }
 
+.embed-queue { margin: 0 0 1.2rem; }
+.embed-form { display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: end; }
+
 .empty-state {
   background: var(--card);
   border: 1px dashed var(--line);

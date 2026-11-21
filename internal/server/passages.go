@@ -171,12 +171,15 @@ func (s *Server) replaceVerses(ctx context.Context, moduleID string, verses []mo
 }
 
 func (s *Server) clearPassages(ctx context.Context, moduleID string) error {
-	_, err := s.db.Exec(ctx, `DELETE FROM bible_passages WHERE module_id = $1`, moduleID)
+	if _, err := s.db.Exec(ctx, `DELETE FROM bible_passages WHERE module_id = $1`, moduleID); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(ctx, `DELETE FROM embedding_jobs WHERE module_id = $1`, moduleID)
 	return err
 }
 
 func (s *Server) indexModule(ctx context.Context, moduleID string) (int, int, error) {
-	if s.embedder == nil {
+	if s.embedder == nil || s.blockActiveEmbed(ctx) {
 		return 0, 0, nil
 	}
 	verses, err := s.loadVerses(ctx, moduleID)
@@ -188,12 +191,7 @@ func (s *Server) indexModule(ctx context.Context, moduleID string) (int, int, er
 	if err != nil {
 		return 0, 0, err
 	}
-	type pendingPassage struct {
-		draft passageDraft
-		hash  string
-		id    string
-	}
-	var pending []pendingPassage
+	var pending []biblePartJob
 	keep := make([]string, 0, len(desired))
 	embedded := 0
 	skipped := 0
@@ -209,37 +207,20 @@ func (s *Server) indexModule(ctx context.Context, moduleID string) (int, int, er
 		if ex, ok := stored[key]; ok {
 			id = ex.id
 		}
-		pending = append(pending, pendingPassage{draft: draft, hash: hash, id: id})
+		pending = append(pending, biblePartJob{ModuleID: moduleID, Draft: draft, Hash: hash})
 		keep = append(keep, id)
 	}
-	for start := 0; start < len(pending); start += embedBatch {
-		end := start + embedBatch
-		if end > len(pending) {
-			end = len(pending)
-		}
-		chunk := pending[start:end]
-		texts := make([]string, len(chunk))
-		for i := range chunk {
-			texts[i] = chunk[i].draft.Body
-		}
-		vecs, err := s.embedder.Embed(ctx, embedPassage, texts)
-		if err != nil {
-			return embedded, skipped, err
-		}
-		if len(vecs) != len(chunk) {
-			return embedded, skipped, fmt.Errorf("эмбеддер вернул %d векторов на %d текстов", len(vecs), len(chunk))
-		}
-		for i := range chunk {
-			if err := validateVector(vecs[i]); err != nil {
-				return embedded, skipped, err
-			}
-			if err := s.upsertPassage(ctx, moduleID, chunk[i].id, chunk[i].draft, chunk[i].hash, vecs[i]); err != nil {
-				return embedded, skipped, err
-			}
-			embedded++
-		}
+	if err := s.enqueueBibleParts(ctx, "active", moduleID, pending); err != nil {
+		return embedded, skipped, err
 	}
+	embedded = len(pending)
 	if err := s.deleteStalePassages(ctx, moduleID, keep); err != nil {
+		return embedded, skipped, err
+	}
+	if err := s.deleteStaleBibleJobs(ctx, moduleID, desired); err != nil {
+		return embedded, skipped, err
+	}
+	if err := s.afterEmbedEnqueue(ctx); err != nil {
 		return embedded, skipped, err
 	}
 	return embedded, skipped, nil
@@ -304,6 +285,22 @@ func (s *Server) upsertPassage(ctx context.Context, moduleID, id string, draft p
 			embedding = EXCLUDED.embedding
 	`, id, moduleID, draft.Book, draft.BookName, draft.Chapter, draft.VerseStart, draft.VerseEnd,
 		draft.Reference, draft.Body, s.embedder.Model(), hash, vectorLiteral(vec))
+	return err
+}
+
+func (s *Server) deleteStaleBibleJobs(ctx context.Context, moduleID string, desired []passageDraft) error {
+	keys := make([]string, len(desired))
+	for i, draft := range desired {
+		keys[i] = fmt.Sprintf("%d:%d:%d", draft.Book, draft.Chapter, draft.VerseStart)
+	}
+	if keys == nil {
+		keys = []string{}
+	}
+	_, err := s.db.Exec(ctx, `
+		DELETE FROM embedding_jobs
+		WHERE object_type = 'bible_passage' AND target = 'active' AND module_id = $1
+		  AND NOT ((book::text || ':' || chapter::text || ':' || verse_start::text) = ANY($2::text[]))
+	`, moduleID, keys)
 	return err
 }
 

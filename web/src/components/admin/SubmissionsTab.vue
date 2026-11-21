@@ -8,6 +8,7 @@ import ConfirmDialog from '../ConfirmDialog.vue'
 import DataTable from '../DataTable.vue'
 import IconButton from '../IconButton.vue'
 import StatusBadge from '../StatusBadge.vue'
+import EmbedQueue from './EmbedQueue.vue'
 
 const session = useSessionStore()
 const status = ref('pending')
@@ -286,6 +287,7 @@ watch([status, kind], reload)
 </script>
 
 <template>
+  <EmbedQueue v-if="session.role === 'admin'" />
   <div class="admin-tools">
     <label class="search">Поиск
       <input v-model="q" type="search" placeholder="Название, короткое имя, почта" @change="reload" />
@@ -329,6 +331,8 @@ watch([status, kind], reload)
     <template #cell-title="{ row }">
       <strong class="title-serif">{{ row.title || row.short_name || 'Без названия' }}</strong>
       <p v-if="subline(row)" class="subline">{{ subline(row) }}</p>
+      <p v-if="row.kind === 'songbook' && row.index_pending" class="subline">Индексируется: {{ row.index_pending }} куплетов</p>
+      <p v-if="row.kind === 'songbook' && row.index_failed" class="subline">Ошибки индексации: {{ row.index_failed }}</p>
     </template>
     <template #cell-who="{ row }">
       <span>{{ row.community_name || '—' }}</span>

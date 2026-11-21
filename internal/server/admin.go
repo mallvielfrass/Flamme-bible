@@ -42,6 +42,8 @@ type submission struct {
 	Publisher      string     `json:"publisher,omitempty"`
 	SubmittedAt    *time.Time `json:"submitted_at,omitempty"`
 	HiddenAt       *time.Time `json:"hidden_at,omitempty"`
+	IndexPending   int        `json:"index_pending,omitempty"`
+	IndexFailed    int        `json:"index_failed,omitempty"`
 }
 
 func markSongbookPending(ctx context.Context, tx pgx.Tx, id string) error {

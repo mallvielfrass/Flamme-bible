@@ -106,8 +106,8 @@ func TestEmbeddingDimensionReset(t *testing.T) {
 	}
 	old := vectorOnes(384)
 	if _, err := testPool.Exec(ctx, `
-		INSERT INTO song_embeddings (songbook_id, fbid, model, text_hash, embedding)
-		VALUES ($1, 'song', 'old', 'hash', $2::vector)
+		INSERT INTO song_embeddings (songbook_id, fbid, part_index, model, text_hash, embedding)
+		VALUES ($1, 'song', 0, 'old', 'hash', $2::vector)
 	`, bookID, old); err != nil {
 		t.Fatal(err)
 	}
@@ -140,8 +140,8 @@ func TestEmbeddingDimensionReset(t *testing.T) {
 	}
 	fresh := vectorOnes(embedDim)
 	if _, err := testPool.Exec(ctx, `
-		INSERT INTO song_embeddings (songbook_id, fbid, model, text_hash, embedding)
-		VALUES ($1, 'song', 'new', 'hash', $2::vector)
+		INSERT INTO song_embeddings (songbook_id, fbid, part_index, model, text_hash, embedding)
+		VALUES ($1, 'song', 0, 'new', 'hash', $2::vector)
 	`, bookID, fresh); err != nil {
 		t.Fatal(err)
 	}
@@ -153,6 +153,96 @@ func TestEmbeddingDimensionReset(t *testing.T) {
 	}
 	if songs != 1 {
 		t.Fatalf("повторная миграция стерла актуальный вектор: %d", songs)
+	}
+}
+
+func TestSongEmbeddingPartKey(t *testing.T) {
+	reset(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	dimID := uuid.NewString()
+	bookID := uuid.NewString()
+	if _, err := testPool.Exec(ctx, `INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')`, userID, "part@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `INSERT INTO dimensions (id, kind) VALUES ($1, 'personal')`, dimID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `INSERT INTO songbooks (id, dimension_id, fbid, header_template) VALUES ($1, $2, 'book', '{}')`, bookID, dimID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `INSERT INTO songs (songbook_id, fbid, parts, revision) VALUES ($1, 'song', '[]', 1)`, bookID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `DROP INDEX IF EXISTS song_embeddings_hnsw`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `DROP TABLE song_embeddings`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		CREATE TABLE song_embeddings (
+		  songbook_id uuid NOT NULL,
+		  fbid text NOT NULL,
+		  model text NOT NULL,
+		  text_hash text NOT NULL,
+		  embedding vector(312) NOT NULL,
+		  PRIMARY KEY (songbook_id, fbid),
+		  FOREIGN KEY (songbook_id, fbid) REFERENCES songs (songbook_id, fbid) ON DELETE CASCADE
+		)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO song_embeddings (songbook_id, fbid, model, text_hash, embedding)
+		VALUES ($1, 'song', 'old', 'hash', $2::vector)
+	`, bookID, vectorOnes(embedDim)); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, testPool); err != nil {
+		t.Fatal(err)
+	}
+	var cols string
+	if err := testPool.QueryRow(ctx, `
+		SELECT string_agg(a.attname, ',' ORDER BY k.ord)
+		FROM pg_constraint c
+		CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
+		JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+		WHERE c.conrelid = 'song_embeddings'::regclass AND c.contype = 'p'
+	`).Scan(&cols); err != nil {
+		t.Fatal(err)
+	}
+	if cols != "songbook_id,fbid,part_index" {
+		t.Fatalf("ключ %s", cols)
+	}
+	var songs int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM song_embeddings`).Scan(&songs); err != nil {
+		t.Fatal(err)
+	}
+	if songs != 0 {
+		t.Fatalf("старый вектор остался: %d", songs)
+	}
+	var indexdef string
+	if err := testPool.QueryRow(ctx, `SELECT indexdef FROM pg_indexes WHERE indexname = 'song_embeddings_hnsw'`).Scan(&indexdef); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(indexdef, "hnsw") || !strings.Contains(indexdef, "vector_cosine_ops") {
+		t.Fatalf("индекс %s", indexdef)
+	}
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO song_embeddings (songbook_id, fbid, part_index, model, text_hash, embedding)
+		VALUES ($1, 'song', 0, 'new', 'hash', $2::vector)
+	`, bookID, vectorOnes(embedDim)); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, testPool); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM song_embeddings`).Scan(&songs); err != nil {
+		t.Fatal(err)
+	}
+	if songs != 1 {
+		t.Fatalf("повтор стёр вектор части: %d", songs)
 	}
 }
 
