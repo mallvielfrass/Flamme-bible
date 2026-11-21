@@ -35,7 +35,10 @@ func Migrate(ctx context.Context, db *pgxpool.Pool) error {
 	if err := migrateSemantic(ctx, db); err != nil {
 		return err
 	}
-	return migratePlansUI(ctx, db)
+	if err := migratePlansUI(ctx, db); err != nil {
+		return err
+	}
+	return migrateAdmin(ctx, db)
 }
 
 func checkPostgres(ctx context.Context, db *pgxpool.Pool) error {

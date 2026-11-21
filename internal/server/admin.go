@@ -26,21 +26,29 @@ type moduleView struct {
 }
 
 type submission struct {
-	Kind           string  `json:"kind"`
-	ID             string  `json:"id"`
-	Title          string  `json:"title"`
-	ShortName      string  `json:"short_name,omitempty"`
-	Status         string  `json:"status"`
-	ModerationNote string  `json:"moderation_note"`
-	DimensionID    *string `json:"dimension_id"`
-	OwnerUserID    *string `json:"owner_user_id"`
+	Kind           string     `json:"kind"`
+	ID             string     `json:"id"`
+	Title          string     `json:"title"`
+	ShortName      string     `json:"short_name,omitempty"`
+	Status         string     `json:"status"`
+	ModerationNote string     `json:"moderation_note"`
+	DimensionID    *string    `json:"dimension_id"`
+	OwnerUserID    *string    `json:"owner_user_id"`
+	CommunityName  string     `json:"community_name,omitempty"`
+	AuthorEmail    string     `json:"author_email,omitempty"`
+	SongsCount     int        `json:"songs_count,omitempty"`
+	BooksCount     int        `json:"books_count,omitempty"`
+	PatchCount     int        `json:"patch_count,omitempty"`
+	Publisher      string     `json:"publisher,omitempty"`
+	SubmittedAt    *time.Time `json:"submitted_at,omitempty"`
 }
 
 func markSongbookPending(ctx context.Context, tx pgx.Tx, id string) error {
 	_, err := tx.Exec(ctx, `
 		UPDATE songbooks
 		SET publish_requested = true,
-		    status = CASE WHEN status = 'approved' THEN status ELSE 'pending' END
+		    status = CASE WHEN status = 'approved' THEN status ELSE 'pending' END,
+		    submitted_at = CASE WHEN status = 'approved' THEN submitted_at ELSE now() END
 		WHERE id = $1
 	`, id)
 	return err
@@ -216,7 +224,8 @@ func (s *Server) submitModule(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE modules
-		SET status = 'pending', moderation_note = '', reviewed_by = NULL, reviewed_at = NULL, updated_at = now()
+		SET status = 'pending', moderation_note = '', reviewed_by = NULL, reviewed_at = NULL,
+		    submitted_at = now(), updated_at = now()
 		WHERE id = $1
 	`, id); err != nil {
 		writeMapped(w, err)
@@ -352,82 +361,7 @@ func (s *Server) adminSubmissions(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireAdmin(w, r); !ok {
 		return
 	}
-	status := r.URL.Query().Get("status")
-	if status == "" {
-		status = "pending"
-	}
-	kind := r.URL.Query().Get("kind")
-	if status != "all" && !validModerationStatus(status) {
-		writeMapped(w, errRequest)
-		return
-	}
-	if kind != "" && kind != "songbook" && kind != "module" {
-		writeMapped(w, errRequest)
-		return
-	}
-	ctx := r.Context()
-	list := []submission{}
-	if kind == "" || kind == "songbook" {
-		q := `SELECT id::text, title, status, moderation_note, dimension_id::text FROM songbooks`
-		var args []any
-		if status != "all" {
-			q += ` WHERE status = $1`
-			args = append(args, status)
-		}
-		q += ` ORDER BY title, id`
-		rows, err := s.db.Query(ctx, q, args...)
-		if err != nil {
-			writeMapped(w, err)
-			return
-		}
-		for rows.Next() {
-			var item submission
-			item.Kind = "songbook"
-			if err := rows.Scan(&item.ID, &item.Title, &item.Status, &item.ModerationNote, &item.DimensionID); err != nil {
-				rows.Close()
-				writeMapped(w, err)
-				return
-			}
-			list = append(list, item)
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			writeMapped(w, err)
-			return
-		}
-		rows.Close()
-	}
-	if kind == "" || kind == "module" {
-		q := `SELECT id::text, title, short_name, status, moderation_note, dimension_id::text, owner_user_id::text FROM modules`
-		var args []any
-		if status != "all" {
-			q += ` WHERE status = $1`
-			args = append(args, status)
-		}
-		q += ` ORDER BY title, id`
-		rows, err := s.db.Query(ctx, q, args...)
-		if err != nil {
-			writeMapped(w, err)
-			return
-		}
-		for rows.Next() {
-			var item submission
-			item.Kind = "module"
-			if err := rows.Scan(&item.ID, &item.Title, &item.ShortName, &item.Status, &item.ModerationNote, &item.DimensionID, &item.OwnerUserID); err != nil {
-				rows.Close()
-				writeMapped(w, err)
-				return
-			}
-			list = append(list, item)
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			writeMapped(w, err)
-			return
-		}
-		rows.Close()
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"submissions": list})
+	s.writeSubmissions(w, r)
 }
 
 func (s *Server) adminApproveSongbook(w http.ResponseWriter, r *http.Request) {
@@ -507,14 +441,18 @@ func (s *Server) moderateSongbook(w http.ResponseWriter, r *http.Request, p prin
 		return
 	}
 	defer tx.Rollback(ctx)
-	var ignored string
-	err = tx.QueryRow(ctx, `SELECT id::text FROM songbooks WHERE id = $1 FOR UPDATE`, id).Scan(&ignored)
+	var current string
+	err = tx.QueryRow(ctx, `SELECT status FROM songbooks WHERE id = $1 FOR UPDATE`, id).Scan(&current)
 	if err == pgx.ErrNoRows {
 		writeMapped(w, errNotFound)
 		return
 	}
 	if err != nil {
 		writeMapped(w, err)
+		return
+	}
+	if !transitionOK(current, status) {
+		writeMapped(w, errConflict)
 		return
 	}
 	public := status == "approved"
@@ -551,8 +489,13 @@ func (s *Server) moderateModule(w http.ResponseWriter, r *http.Request, p princi
 		return
 	}
 	defer tx.Rollback(ctx)
-	if _, err := lockModule(ctx, tx, id); err != nil {
+	view, err := lockModule(ctx, tx, id)
+	if err != nil {
 		writeMapped(w, err)
+		return
+	}
+	if !transitionOK(view.Status, status) {
+		writeMapped(w, errConflict)
 		return
 	}
 	if _, err := tx.Exec(ctx, `
@@ -563,7 +506,7 @@ func (s *Server) moderateModule(w http.ResponseWriter, r *http.Request, p princi
 		writeMapped(w, err)
 		return
 	}
-	view, err := loadModule(ctx, tx, id)
+	view, err = loadModule(ctx, tx, id)
 	if err != nil {
 		writeMapped(w, err)
 		return
@@ -601,8 +544,19 @@ func readNote(w http.ResponseWriter, r *http.Request, required bool) (string, bo
 
 func validModerationStatus(status string) bool {
 	switch status {
-	case "draft", "pending", "approved", "rejected":
+	case "draft", "pending", "approved", "rejected", "hidden", "all":
 		return true
+	default:
+		return false
+	}
+}
+
+func transitionOK(from, to string) bool {
+	switch to {
+	case "approved", "rejected":
+		return from == "pending" || from == "rejected"
+	case "draft":
+		return from == "approved"
 	default:
 		return false
 	}

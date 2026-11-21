@@ -155,15 +155,21 @@ songbook_section_songs (section_id, songbook_id, fbid, position)
 
 `GET /api/catalog/songbooks` и `GET /api/catalog/modules` без сессии отдают только `approved`. У сборника при этом ещё `public=true`. Старый `GET /catalog/matches` тоже смотрит только одобренные публичные песни. Свои черновики видны в `GET /dimensions/{id}/songbooks` и `GET /api/modules`.
 
-Только `role=admin`:
+`submitted_at` ставится, когда сборник или модуль уходит на проверку. Для уже лежавших в очереди строк берётся дата решения, а если её нет — время миграции.
 
-- `GET /api/admin/submissions?status=pending|draft|approved|rejected|all&kind=songbook|module`
-- `POST /api/admin/songbooks/{id}/approve`
-- `POST /api/admin/songbooks/{id}/reject` — тело `{"note":"причина"}`
-- `POST /api/admin/songbooks/{id}/revoke` — снимает с публикации, статус снова `draft`. Тело `{}` или `{"note":"..."}`
+Только `role=admin` (модератор описан ниже, когда роль появляется):
+
+- `GET /api/admin/submissions?status=pending|draft|approved|rejected|hidden|all&kind=songbook|module&q=&sort=submitted&limit=&offset=`
+  Ответ: `submissions`, `total`, `counts`. В строке есть `community_name`, `author_email`, `short_name`, `songs_count` или `books_count`, `submitted_at`, у сборника ещё `publisher` и `patch_count`. По умолчанию статус `pending`, порядок — сначала давно отправленные. `q` ищет по названию, короткому имени и почте автора. `limit` по умолчанию 50, максимум 200.
+- `GET /api/admin/summary` — `pending_songbooks`, `pending_modules`, `draft_releases`, `active_version`.
+- `GET /api/admin/songbooks/{id}` — карточка, первые песни, число песен и похожие песни из каталога. Смотреть можно любой сборник, не только публичный.
+- `GET /api/admin/modules/{id}` — карточка, книги и число стихов из `module_verses`.
+- `POST /api/admin/songbooks/{id}/approve` и `reject` — только из `pending` или `rejected`. Иначе `409`.
+- `POST /api/admin/songbooks/{id}/reject` — тело `{"note":"причина"}`.
+- `POST /api/admin/songbooks/{id}/revoke` — только из `approved`, статус снова `draft`. Тело `{}` или `{"note":"..."}`. Иначе `409`.
 - те же три пути для `/api/admin/modules/{id}/...`
 
-Решение администратора пространства `POST /songbooks/{id}/publish/decision` сохранено: `public: true` ставит `approved`, `public: false` ставит `rejected`.
+Решение администратора пространства `POST /songbooks/{id}/publish/decision` пока остаётся у администратора общины: `public: true` ставит `approved`, `public: false` ставит `rejected`.
 
 ## Релизы клиента
 
