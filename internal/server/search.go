@@ -100,7 +100,7 @@ func (s *Server) searchSongs(w http.ResponseWriter, r *http.Request) {
 }
 
 // songAccessWhere — то же правило, что у поиска по словам и по смыслу:
-// песня не удалена, сборник свой (пользователь не исключён) или одобрен.
+// песня не удалена, сборник не скрыт админкой (hidden_at), свой или одобрен.
 func songAccessWhere(bookArg, dimArg, userArg string) string {
 	return fmt.Sprintf(`NOT s.deleted
 		  AND b.hidden_at IS NULL

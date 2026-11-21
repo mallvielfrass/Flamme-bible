@@ -190,6 +190,76 @@ func TestSemanticSongs(t *testing.T) {
 	}
 }
 
+func TestSemanticSkipsHiddenSongbook(t *testing.T) {
+	emb := &countingEmbedder{}
+	srv, _ := newSemanticServer(t, emb)
+	owner := registerUser(t, srv, "owner@example.com", "secret-pass", nil)
+	kept := createBook(t, srv, owner.Token, owner.DimensionID, map[string]any{"fbid": "kept", "title": "Видимый"})
+	hidden := createBook(t, srv, owner.Token, owner.DimensionID, map[string]any{"fbid": "gone", "title": "Скрытый"})
+	rev := pushAt(t, srv, owner, kept.ID, 0, []testSong{
+		{"sea", "Тихая вода", "лодка вышла в открытое море", false},
+	})
+	pushAt(t, srv, owner, hidden.ID, rev, []testSong{
+		{"forgive", "После падения", "Бог даёт прощение тому, кто встал", false},
+	})
+
+	code, raw := api(t, srv, owner.Token, http.MethodGet, "/api/songs/semantic?q="+urlQuery("прощение")+"&limit=5", nil)
+	if code != http.StatusOK {
+		t.Fatalf("до скрытия %d %s", code, raw)
+	}
+	var seen bool
+	for _, hit := range semanticHits(t, raw) {
+		if hit.FBID == "forgive" && hit.SongbookID == hidden.ID {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatalf("до скрытия %+v", semanticHits(t, raw))
+	}
+	if _, err := testPool.Exec(context.Background(), `UPDATE songbooks SET hidden_at = now() WHERE id = $1`, hidden.ID); err != nil {
+		t.Fatal(err)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/songs/semantic?q="+urlQuery("прощение")+"&limit=5", nil)
+	if code != http.StatusOK {
+		t.Fatalf("скрытый %d %s", code, raw)
+	}
+	for _, hit := range semanticHits(t, raw) {
+		if hit.SongbookID == hidden.ID || hit.FBID == "forgive" {
+			t.Fatalf("скрытый сборник в выдаче %+v", hit)
+		}
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/songs/semantic?q="+urlQuery("море")+"&limit=5", nil)
+	if code != http.StatusOK {
+		t.Fatalf("видимый %d %s", code, raw)
+	}
+	hits := semanticHits(t, raw)
+	if len(hits) != 1 || hits[0].FBID != "sea" {
+		t.Fatalf("видимый сборник %+v", hits)
+	}
+	var rows int
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM song_embeddings WHERE fbid = 'forgive'`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("вектор скрытой песни удалён: %d", rows)
+	}
+	before := emb.Calls()
+	if _, err := testPool.Exec(context.Background(), `UPDATE songbooks SET hidden_at = NULL WHERE id = $1`, hidden.ID); err != nil {
+		t.Fatal(err)
+	}
+	if emb.Calls() != before {
+		t.Fatalf("возврат пересчитал векторы: %d -> %d", before, emb.Calls())
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/songs/semantic?q="+urlQuery("прощение")+"&limit=5", nil)
+	if code != http.StatusOK {
+		t.Fatalf("после возврата %d %s", code, raw)
+	}
+	hits = semanticHits(t, raw)
+	if len(hits) == 0 || hits[0].FBID != "forgive" || hits[0].SongbookID != hidden.ID {
+		t.Fatalf("после возврата %+v", hits)
+	}
+}
+
 type testSong struct {
 	fbid    string
 	title   string

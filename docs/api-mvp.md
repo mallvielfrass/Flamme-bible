@@ -108,7 +108,7 @@ PlanDef — секции `[Plan]`, `[Bible.N]`, `[Text.N]`, `[Songs.N]`. Пер�
 
 `GET /api/songs/semantic?q=&songbook_id=&dimension_id=&community_id=&limit=`
 
-Те же правила видимости, что у `GET /api/songs/search`: свои пространства и одобренные сборники. `limit` от 1 до 100, по умолчанию 20. Ответ: `{"songs":[{"songbook_id","fbid","title","songbook_title","dimension_id","status","section_title","fragment"}]}`. `fragment` — текст ближайшей по смыслу части, обрезанный до 280 символов. `section_id` работает так же, как в поиске по словам. Порядок — от ближайшей по смыслу.
+Те же правила видимости, что у `GET /api/songs/search`: свои пространства и одобренные сборники. Скрытый сборник (`hidden_at`) в выдачу не попадает, векторы его частей сохраняются. `limit` от 1 до 100, по умолчанию 20. Ответ: `{"songs":[{"songbook_id","fbid","title","songbook_title","dimension_id","status","section_title","fragment"}]}`. `fragment` — текст ближайшей по смыслу части, обрезанный до 280 символов. `section_id` работает так же, как в поиске по словам. Порядок — от ближайшей по смыслу.
 
 ## Разделы сборника
 
