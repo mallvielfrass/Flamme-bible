@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { api, apiBlob, explain } from '../api'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { clipPlanText, decodePlanText, importEncodingNotice } from '../checks'
 import {
   bibleItem,
@@ -26,7 +27,7 @@ const error = ref('')
 const notice = ref('')
 const editor = ref(null)
 const addTab = ref('song')
-const confirmDelete = ref(false)
+const confirmRef = ref(null)
 const importFormat = ref('json')
 const importTitle = ref('')
 const exportEncoding = ref('utf-8')
@@ -69,9 +70,9 @@ function applyEditor(view) {
     title: view.title || '',
     version: view.version,
     updated_at: view.updated_at || '',
+    dimension_id: view.dimension_id || '',
     items: (view.items || []).map((item) => ({ ...item })),
   }
-  confirmDelete.value = false
   repair.value = null
 }
 
@@ -90,8 +91,7 @@ async function load() {
 }
 
 function blank() {
-  editor.value = { id: '', title: '', version: 0, updated_at: '', items: [] }
-  confirmDelete.value = false
+  editor.value = { id: '', title: '', version: 0, updated_at: '', dimension_id: '', items: [] }
   repair.value = null
   error.value = ''
   notice.value = ''
@@ -162,7 +162,14 @@ function move(index, delta) {
   editor.value.items = moveItem(editor.value.items, index, delta)
 }
 
-function remove(index) {
+async function remove(index) {
+  const item = editor.value.items[index]
+  const ok = await confirmRef.value.confirm({
+    title: 'Убрать пункт?',
+    text: `Убрать пункт №${index + 1} «${itemTitle(item)}»? Изменение сохранится, когда вы нажмёте дискету.`,
+    action: 'Убрать',
+  })
+  if (!ok) return
   editor.value.items.splice(index, 1)
 }
 
@@ -219,10 +226,14 @@ async function save() {
 
 async function removePlan() {
   if (!editor.value?.id) return
-  if (!confirmDelete.value) {
-    confirmDelete.value = true
-    return
-  }
+  const name = editor.value.title.trim() || 'План'
+  const count = editor.value.items.length
+  const community = session.spaces.find((space) => space.id === editor.value.dimension_id)
+  const text = editor.value.dimension_id
+    ? `Удалить план «${name}» из общины «${community?.name || 'Община'}»? В нём ${points(count)}. План пропадёт у всех участников общины и на компьютерах после следующей синхронизации.`
+    : `Удалить план «${name}»? В нём ${points(count)}. План пропадёт на ваших компьютерах после следующей синхронизации.`
+  const ok = await confirmRef.value.confirm({ title: 'Удалить план?', text, action: 'Удалить' })
+  if (!ok) return
   busy.value = true
   error.value = ''
   try {
@@ -454,9 +465,7 @@ watch(scope, load, { immediate: true })
 
       <div class="btn-row">
         <button class="btn slim primary" type="button" :disabled="busy" @click="save">Сохранить план</button>
-        <button v-if="editor.id" class="btn slim" type="button" :disabled="busy" @click="removePlan">
-          {{ confirmDelete ? 'Подтвердить удаление' : 'Удалить план' }}
-        </button>
+        <button v-if="editor.id" class="btn slim danger" type="button" :disabled="busy" @click="removePlan">Удалить план</button>
       </div>
 
       <h3>Файл плана</h3>
@@ -494,4 +503,5 @@ watch(scope, load, { immediate: true })
       <p>Выберите план слева или создайте новый.</p>
     </section>
   </div>
+  <ConfirmDialog ref="confirmRef" />
 </template>
