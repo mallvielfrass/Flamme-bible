@@ -79,7 +79,7 @@ func (s *Server) loadSubmissions(ctx context.Context, q string) ([]submission, e
 func (s *Server) querySongbookSubmissions(ctx context.Context, q string) ([]submission, error) {
 	sql := `
 		SELECT s.id::text, s.title, s.short_name, s.status, s.moderation_note, s.dimension_id::text,
-		       s.publisher, s.submitted_at,
+		       s.publisher, s.submitted_at, s.hidden_at,
 		       CASE WHEN d.kind = 'personal' THEN 'Личное' ELSE d.name END,
 		       COALESCE((
 		         SELECT u.email FROM memberships m
@@ -108,13 +108,17 @@ func (s *Server) querySongbookSubmissions(ctx context.Context, q string) ([]subm
 		item.Kind = "songbook"
 		if err := rows.Scan(
 			&item.ID, &item.Title, &item.ShortName, &item.Status, &item.ModerationNote, &item.DimensionID,
-			&item.Publisher, &item.SubmittedAt, &item.CommunityName, &item.AuthorEmail, &item.SongsCount, &item.PatchCount,
+			&item.Publisher, &item.SubmittedAt, &item.HiddenAt, &item.CommunityName, &item.AuthorEmail, &item.SongsCount, &item.PatchCount,
 		); err != nil {
 			return nil, err
 		}
 		if item.SubmittedAt != nil {
 			t := item.SubmittedAt.UTC()
 			item.SubmittedAt = &t
+		}
+		if item.HiddenAt != nil {
+			t := item.HiddenAt.UTC()
+			item.HiddenAt = &t
 		}
 		list = append(list, item)
 	}
@@ -168,6 +172,10 @@ func likeOrEmpty(q string) string {
 	return likeContains(q)
 }
 
+func hiddenRow(item submission) bool {
+	return item.HiddenAt != nil
+}
+
 func filterSubmissions(items []submission, status, kind string) []submission {
 	out := []submission{}
 	for _, item := range items {
@@ -175,6 +183,12 @@ func filterSubmissions(items []submission, status, kind string) []submission {
 			continue
 		}
 		if status == "hidden" {
+			if hiddenRow(item) {
+				out = append(out, item)
+			}
+			continue
+		}
+		if hiddenRow(item) {
 			continue
 		}
 		if status != "all" && item.Status != status {
@@ -187,19 +201,17 @@ func filterSubmissions(items []submission, status, kind string) []submission {
 
 func submissionCounts(items []submission, status, kind string) map[string]any {
 	kindCounts := map[string]int{"all": 0, "songbook": 0, "module": 0}
-	for _, item := range items {
-		if status == "hidden" {
-			continue
-		}
-		if status != "all" && item.Status != status {
-			continue
-		}
+	for _, item := range filterSubmissions(items, status, "") {
 		kindCounts["all"]++
 		kindCounts[item.Kind]++
 	}
 	statusCounts := map[string]int{"pending": 0, "approved": 0, "rejected": 0, "draft": 0, "hidden": 0, "all": 0}
 	for _, item := range items {
 		if kind != "" && item.Kind != kind {
+			continue
+		}
+		if hiddenRow(item) {
+			statusCounts["hidden"]++
 			continue
 		}
 		statusCounts[item.Status]++
@@ -245,12 +257,12 @@ func pageWindow(r *http.Request, def, max int) (int, int, error) {
 }
 
 func (s *Server) adminSummary(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	if _, ok := s.requireModerator(w, r); !ok {
 		return
 	}
 	ctx := r.Context()
 	var songbooks, modules, drafts int
-	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM songbooks WHERE status = 'pending'`).Scan(&songbooks); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM songbooks WHERE status = 'pending' AND hidden_at IS NULL`).Scan(&songbooks); err != nil {
 		writeMapped(w, err)
 		return
 	}
@@ -276,7 +288,7 @@ func (s *Server) adminSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminSongbookView(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	if _, ok := s.requireModerator(w, r); !ok {
 		return
 	}
 	id := r.PathValue("id")
@@ -459,7 +471,7 @@ func decodeParts(raw []byte, song *catalogSong) error {
 }
 
 func (s *Server) adminModuleView(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	if _, ok := s.requireModerator(w, r); !ok {
 		return
 	}
 	id := r.PathValue("id")

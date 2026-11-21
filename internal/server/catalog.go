@@ -294,7 +294,7 @@ const publicSongsSQL = `
 	SELECT s.songbook_id::text, s.fbid, s.title, s.parts
 	FROM songs s
 	JOIN songbooks b ON b.id = s.songbook_id
-	WHERE b.public AND b.status = 'approved' AND NOT s.deleted
+	WHERE b.public AND b.status = 'approved' AND b.hidden_at IS NULL AND NOT s.deleted
 	ORDER BY s.songbook_id, s.fbid`
 
 func (s *Server) publicSongs(ctx context.Context) ([]catalogSong, error) {

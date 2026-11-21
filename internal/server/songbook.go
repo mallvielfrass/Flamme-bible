@@ -178,7 +178,7 @@ func (s *Server) listSongbooks(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
-	rows, err := s.db.Query(r.Context(), `SELECT `+bookCols+` FROM songbooks WHERE dimension_id = $1 ORDER BY id`, dimID)
+	rows, err := s.db.Query(r.Context(), `SELECT `+bookCols+` FROM songbooks WHERE dimension_id = $1 AND hidden_at IS NULL ORDER BY id`, dimID)
 	if err != nil {
 		writeMapped(w, err)
 		return

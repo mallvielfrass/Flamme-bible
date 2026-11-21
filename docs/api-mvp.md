@@ -163,6 +163,9 @@ songbook_section_songs (section_id, songbook_id, fbid, position)
   Ответ: `submissions`, `total`, `counts`. В строке есть `community_name`, `author_email`, `short_name`, `songs_count` или `books_count`, `submitted_at`, у сборника ещё `publisher` и `patch_count`. По умолчанию статус `pending`, порядок — сначала давно отправленные. `q` ищет по названию, короткому имени и почте автора. `limit` по умолчанию 50, максимум 200.
 - `GET /api/admin/summary` — `pending_songbooks`, `pending_modules`, `draft_releases`, `active_version`.
 - `GET /api/admin/songbooks/{id}` — карточка, первые песни, число песен и похожие песни из каталога. Смотреть можно любой сборник, не только публичный.
+- `DELETE /api/admin/songbooks/{id}` — если есть патчи (`parent_id`), сборник и патчи получают `hidden_at` и пропадают из каталога, поиска, списка синхронизации и обычной очереди. Их видно при `status=hidden`. `POST /api/admin/songbooks/{id}/unhide` возвращает. Без патчей сборник удаляется вместе с песнями.
+- `DELETE /api/admin/modules/{id}` удаляет модуль, стихи и отрывки.
+- `DELETE /api/admin/communities/{id}` удаляет общину, её участников, приглашения, сборники и планы. Личное пространство так не удаляется.
 - `GET /api/admin/modules/{id}` — карточка, книги и число стихов из `module_verses`.
 - `POST /api/admin/songbooks/{id}/approve` и `reject` — только из `pending` или `rejected`. Иначе `409`.
 - `POST /api/admin/songbooks/{id}/reject` — тело `{"note":"причина"}`.

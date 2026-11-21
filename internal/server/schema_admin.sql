@@ -29,3 +29,5 @@ ALTER TABLE songbooks ADD CONSTRAINT songbooks_reviewed_by_fkey FOREIGN KEY (rev
 ALTER TABLE modules DROP CONSTRAINT IF EXISTS modules_reviewed_by_fkey;
 
 ALTER TABLE modules ADD CONSTRAINT modules_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE songbooks ADD COLUMN IF NOT EXISTS hidden_at timestamptz;

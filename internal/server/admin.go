@@ -41,6 +41,7 @@ type submission struct {
 	PatchCount     int        `json:"patch_count,omitempty"`
 	Publisher      string     `json:"publisher,omitempty"`
 	SubmittedAt    *time.Time `json:"submitted_at,omitempty"`
+	HiddenAt       *time.Time `json:"hidden_at,omitempty"`
 }
 
 func markSongbookPending(ctx context.Context, tx pgx.Tx, id string) error {
@@ -298,7 +299,7 @@ func (s *Server) submitSongbook(w http.ResponseWriter, r *http.Request) {
 func (s *Server) publicSongbooks(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(r.Context(), `
 		SELECT `+bookCols+` FROM songbooks
-		WHERE status = 'approved' AND public
+		WHERE status = 'approved' AND public AND hidden_at IS NULL
 		ORDER BY title, id
 	`)
 	if err != nil {
@@ -358,14 +359,14 @@ func (s *Server) publicModules(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminSubmissions(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	if _, ok := s.requireModerator(w, r); !ok {
 		return
 	}
 	s.writeSubmissions(w, r)
 }
 
 func (s *Server) adminApproveSongbook(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAdmin(w, r)
+	p, ok := s.requireModerator(w, r)
 	if !ok {
 		return
 	}
@@ -373,7 +374,7 @@ func (s *Server) adminApproveSongbook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminRejectSongbook(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAdmin(w, r)
+	p, ok := s.requireModerator(w, r)
 	if !ok {
 		return
 	}
@@ -385,7 +386,7 @@ func (s *Server) adminRejectSongbook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminRevokeSongbook(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAdmin(w, r)
+	p, ok := s.requireModerator(w, r)
 	if !ok {
 		return
 	}
@@ -397,7 +398,7 @@ func (s *Server) adminRevokeSongbook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminApproveModule(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAdmin(w, r)
+	p, ok := s.requireModerator(w, r)
 	if !ok {
 		return
 	}
@@ -405,7 +406,7 @@ func (s *Server) adminApproveModule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminRejectModule(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAdmin(w, r)
+	p, ok := s.requireModerator(w, r)
 	if !ok {
 		return
 	}
@@ -417,7 +418,7 @@ func (s *Server) adminRejectModule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminRevokeModule(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAdmin(w, r)
+	p, ok := s.requireModerator(w, r)
 	if !ok {
 		return
 	}
