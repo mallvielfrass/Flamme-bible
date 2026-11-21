@@ -4,6 +4,7 @@ import { homePath, redirectFor } from './guard'
 const guest = {}
 const user = { token: 't', role: 'user' }
 const admin = { token: 't', role: 'admin' }
+const moderator = { token: 't', role: 'moderator' }
 
 function to(path, meta = {}) {
   return { path, fullPath: path, meta }
@@ -31,6 +32,7 @@ describe('navigation guard', () => {
     })
     expect(redirectFor(to('/admin', { admin: true }), user)).toEqual({ path: '/songbooks' })
     expect(redirectFor(to('/admin', { admin: true }), admin)).toBeUndefined()
+    expect(redirectFor(to('/admin/songbooks', { admin: true }), moderator)).toBeUndefined()
   })
 
   it('does not show the login form to someone who is already in', () => {

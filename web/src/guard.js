@@ -6,7 +6,7 @@ export function redirectFor(to, session) {
   const loggedIn = Boolean(session?.token)
   if (to.meta?.admin) {
     if (!loggedIn) return { path: '/login', query: { next: to.fullPath } }
-    if (session.role !== 'admin') return { path: '/songbooks' }
+    if (session.role !== 'admin' && session.role !== 'moderator') return { path: '/songbooks' }
   }
   if (!to.meta?.public && !loggedIn) {
     return { path: '/login', query: { next: to.fullPath } }
