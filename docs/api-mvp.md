@@ -169,7 +169,19 @@ songbook_section_songs (section_id, songbook_id, fbid, position)
 - `POST /api/admin/songbooks/{id}/revoke` — только из `approved`, статус снова `draft`. Тело `{}` или `{"note":"..."}`. Иначе `409`.
 - те же три пути для `/api/admin/modules/{id}/...`
 
-Решение администратора пространства `POST /songbooks/{id}/publish/decision` пока остаётся у администратора общины: `public: true` ставит `approved`, `public: false` ставит `rejected`.
+`POST /songbooks/{id}/publish/decision` больше не обходит модерацию администратором общины. Вызов доступен только `role=admin` сайта: `public: true` ставит `approved`, `public: false` ставит `rejected`.
+
+## Общины для администратора сайта
+
+Администратор сайта управляет участниками любой общины, даже если сам в ней не состоит. Администратор общины по-прежнему видит своих.
+
+- `GET /api/admin/communities?q=&limit=&offset=` — название, адрес, числа участников, админов, сборников и планов, плюс `total`.
+- `GET /api/admin/communities/{id}/members` и `GET /api/communities/{id}/members` — `user_id`, `email`, `role`, `excluded`.
+- `POST /api/communities/{id}/members/{userID}/exclude` и `/include`. Старый `POST /dimensions/{id}/members/{userID}/exclude` работает для администратора общины.
+- `POST /api/communities/{id}/members/{userID}/role` — `{"role":"admin|member"}`. Последнего администратора общины снять нельзя.
+- `GET /api/communities/{id}/invites` — активные приглашения, `digest` это hex SHA-256 токена, исходный токен сервер не хранит.
+- `DELETE /api/communities/{id}/invites/{digest}` отзывает приглашение.
+- `POST /api/communities/{id}/invites` администратор сайта может вызвать для любой общины.
 
 ## Пользователи
 

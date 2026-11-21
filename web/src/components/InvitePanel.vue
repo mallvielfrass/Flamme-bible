@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api, explain } from '../api'
 import { useSessionStore } from '../stores/session'
@@ -13,12 +13,12 @@ const route = useRoute()
 const session = useSessionStore()
 const ttl = ref(86400)
 const invite = ref(null)
-const userId = ref('')
-const excluded = ref(false)
+const members = ref(null)
 const error = ref('')
 const busy = ref(false)
 
 const spaceId = computed(() => props.dimensionId || route.params.id || '')
+watch(spaceId, loadMembers, { immediate: true })
 
 const link = computed(() => {
   if (!invite.value?.token || typeof location === 'undefined') return ''
@@ -43,18 +43,39 @@ async function createInvite() {
   }
 }
 
-async function exclude() {
+async function loadMembers() {
+  if (!spaceId.value) return
+  try {
+    const data = await api(`/api/communities/${spaceId.value}/members`, { token: session.token })
+    members.value = data.members || []
+  } catch (err) {
+    if (err.status === 404 || err.status === 403) members.value = null
+  }
+}
+
+async function exclude(member) {
   error.value = ''
-  excluded.value = false
   busy.value = true
   try {
-    await api(`/dimensions/${spaceId.value}/members/${encodeURIComponent(userId.value.trim())}/exclude`, {
+    await api(`/api/communities/${spaceId.value}/members/${member.user_id}/exclude`, {
       method: 'POST',
       token: session.token,
     })
-    excluded.value = true
-    userId.value = ''
+    await loadMembers()
   } catch (err) {
+    if (err.status === 404) {
+      try {
+        await api(`/dimensions/${spaceId.value}/members/${member.user_id}/exclude`, {
+          method: 'POST',
+          token: session.token,
+        })
+        await loadMembers()
+        return
+      } catch (inner) {
+        error.value = explain(inner)
+        return
+      }
+    }
     error.value = explain(err)
   } finally {
     busy.value = false
@@ -79,16 +100,14 @@ async function exclude() {
     <p v-if="link" class="answer">
       Ссылка: <a :href="link">{{ link }}</a>
     </p>
-    <details>
-      <summary>Исключить участника</summary>
-      <form @submit.prevent="exclude">
-        <label>Идентификатор участника
-          <input v-model="userId" name="user_id" required />
-        </label>
-        <button class="btn slim" type="submit" :disabled="busy">Исключить</button>
-      </form>
-      <p v-if="excluded" class="banner ok">Участник исключён.</p>
-    </details>
+    <div v-if="members">
+      <h3>Участники</h3>
+      <p v-for="member in members" :key="member.user_id">
+        {{ member.email }} · {{ member.role }}
+        <span v-if="member.excluded"> · исключён</span>
+        <button v-else class="btn slim" type="button" :disabled="busy" @click="exclude(member)">Исключить</button>
+      </p>
+    </div>
     <p v-if="error" class="banner bad" role="alert">{{ error }}</p>
   </section>
 </template>

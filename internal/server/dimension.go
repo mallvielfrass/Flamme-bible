@@ -157,13 +157,8 @@ func (s *Server) createInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(ctx)
-	role, err := membershipTx(ctx, tx, p.UserID, dimID)
-	if err != nil {
+	if err := communityStaff(ctx, tx, p.UserID, dimID); err != nil {
 		writeMapped(w, err)
-		return
-	}
-	if role != "admin" {
-		writeMapped(w, errForbidden)
 		return
 	}
 	var kind string

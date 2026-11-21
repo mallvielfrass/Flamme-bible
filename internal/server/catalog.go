@@ -100,12 +100,12 @@ func (s *Server) decidePublish(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
-	role, err := membershipTx(ctx, tx, p.UserID, dimID)
-	if err != nil {
+	var siteRole string
+	if err := tx.QueryRow(ctx, `SELECT role FROM users WHERE id = $1`, p.UserID).Scan(&siteRole); err != nil {
 		writeMapped(w, err)
 		return
 	}
-	if role != "admin" {
+	if siteRole != "admin" {
 		writeMapped(w, errForbidden)
 		return
 	}
