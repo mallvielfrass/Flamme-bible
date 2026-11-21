@@ -32,6 +32,38 @@ export function canSubmit(status) {
   return !status || status === 'draft' || status === 'rejected'
 }
 
+export function canApprove(status) {
+  return status === 'pending' || status === 'rejected'
+}
+
+export function canReject(status) {
+  return status === 'pending'
+}
+
+export function canRevoke(status) {
+  return status === 'approved'
+}
+
+export function moderationHint(action, status) {
+  if (action === 'approve' && !canApprove(status)) return 'Одобрить можно заявку на проверке или отклонённую.'
+  if (action === 'reject' && !canReject(status)) return 'Отклонить можно только заявку на проверке.'
+  if (action === 'revoke' && !canRevoke(status)) return 'Снять с публикации можно только одобренное.'
+  return ''
+}
+
+export function formatWhen(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 export function inviteToken(raw) {
   const text = String(raw || '').trim()
   if (!text) return ''
