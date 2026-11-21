@@ -103,6 +103,11 @@ func TestPublishDecisionIsAdmin(t *testing.T) {
 	if code != http.StatusForbidden {
 		t.Fatalf("участник решает %d %s", code, raw)
 	}
+	code, raw = api(t, srv, admin.Token, http.MethodPost, "/songbooks/"+book.ID+"/publish/decision", map[string]any{"public": true})
+	if code != http.StatusForbidden {
+		t.Fatalf("админ общины обходит модерацию %d %s", code, raw)
+	}
+	site := ensureSiteAdmin(t, srv)
 	var requested, published bool
 	if err := testPool.QueryRow(context.Background(), `SELECT publish_requested, public FROM songbooks WHERE id = $1`, book.ID).Scan(&requested, &published); err != nil {
 		t.Fatal(err)
@@ -110,15 +115,40 @@ func TestPublishDecisionIsAdmin(t *testing.T) {
 	if !requested || published {
 		t.Fatalf("отказ участника изменил публикацию requested=%v public=%v", requested, published)
 	}
-	code, raw = api(t, srv, admin.Token, http.MethodPost, "/songbooks/"+book.ID+"/publish/decision", map[string]any{"public": true})
+	code, raw = api(t, srv, site.Token, http.MethodPost, "/songbooks/"+book.ID+"/publish/decision", map[string]any{"public": true})
 	if code != http.StatusOK {
-		t.Fatalf("админ %d %s", code, raw)
+		t.Fatalf("админ сайта %d %s", code, raw)
 	}
 	var view songbookView
 	mustJSON(t, raw, &view)
 	if !view.Public || view.PublishRequested {
 		t.Fatalf("решение %+v", view)
 	}
+}
+
+var siteAdminByServer = map[string]authResp{}
+
+func ensureSiteAdmin(t *testing.T, srv *httptest.Server) authResp {
+	t.Helper()
+	if got, ok := siteAdminByServer[srv.URL]; ok {
+		return got
+	}
+	t.Setenv("ADMIN_EMAIL", "admin@example.com")
+	code, raw := api(t, srv, "", http.MethodPost, "/register", map[string]any{
+		"email": "admin@example.com", "password": "secret-pass",
+	})
+	if code == http.StatusConflict {
+		code, raw = api(t, srv, "", http.MethodPost, "/login", map[string]any{
+			"email": "admin@example.com", "password": "secret-pass",
+		})
+	}
+	if code != http.StatusOK {
+		t.Fatalf("админ сайта %d %s", code, raw)
+	}
+	var out authResp
+	mustJSON(t, raw, &out)
+	siteAdminByServer[srv.URL] = out
+	return out
 }
 
 func publishBook(t *testing.T, srv *httptest.Server, user authResp, title string) songbookView {
@@ -128,7 +158,8 @@ func publishBook(t *testing.T, srv *httptest.Server, user authResp, title string
 	if code != http.StatusOK {
 		t.Fatalf("запрос %d %s", code, raw)
 	}
-	code, raw = api(t, srv, user.Token, http.MethodPost, "/songbooks/"+book.ID+"/publish/decision", map[string]any{"public": true})
+	site := ensureSiteAdmin(t, srv)
+	code, raw = api(t, srv, site.Token, http.MethodPost, "/api/admin/songbooks/"+book.ID+"/approve", nil)
 	if code != http.StatusOK {
 		t.Fatalf("решение %d %s", code, raw)
 	}

@@ -9,6 +9,11 @@ const router = useRouter()
 
 const authScreen = computed(() => route.path === '/login' || route.path === '/register')
 const songsTo = computed(() => (session.token ? '/songbooks' : '/catalog'))
+const pendingAdmin = computed(() => {
+  const summary = session.adminSummary
+  if (!summary) return 0
+  return Number(summary.pending_songbooks || 0) + Number(summary.pending_modules || 0)
+})
 
 function on(name) {
   const path = route.path
@@ -17,7 +22,7 @@ function on(name) {
   if (name === 'ai') return path === '/ai'
   if (name === 'spaces') return path === '/communities' || path.startsWith('/dimensions/')
   if (name === 'download') return path === '/download'
-  if (name === 'admin') return path === '/admin'
+  if (name === 'admin') return path.startsWith('/admin')
   return false
 }
 
@@ -36,7 +41,10 @@ async function logout() {
       <router-link v-if="session.token" class="nav-link" :class="{ 'router-link-active': on('spaces') }" to="/communities">Общины</router-link>
       <router-link v-if="session.token" class="nav-link" :class="{ 'router-link-active': on('ai') }" to="/ai">AI Чат</router-link>
       <router-link class="nav-link" :class="{ 'router-link-active': on('download') }" to="/download">Скачать клиент</router-link>
-      <router-link v-if="session.role === 'admin'" class="nav-link" :class="{ 'router-link-active': on('admin') }" to="/admin">Админ-панель</router-link>
+      <router-link v-if="session.role === 'admin' || session.role === 'moderator'" class="nav-link" :class="{ 'router-link-active': on('admin') }" to="/admin">
+        Админ-панель
+        <span v-if="pendingAdmin" class="nav-badge">{{ pendingAdmin }}</span>
+      </router-link>
       <div class="nav-end">
         <button v-if="session.token" class="logout" type="button" @click="logout">Выход</button>
         <template v-else>

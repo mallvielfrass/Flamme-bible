@@ -103,6 +103,7 @@ func (s *Server) searchSongs(w http.ResponseWriter, r *http.Request) {
 // песня не удалена, сборник свой (пользователь не исключён) или одобрен.
 func songAccessWhere(bookArg, dimArg, userArg string) string {
 	return fmt.Sprintf(`NOT s.deleted
+		  AND b.hidden_at IS NULL
 		  AND (%s::uuid IS NULL OR s.songbook_id = %s::uuid)
 		  AND (%s::uuid IS NULL OR b.dimension_id = %s::uuid)
 		  AND (

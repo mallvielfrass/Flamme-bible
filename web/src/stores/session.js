@@ -40,6 +40,7 @@ export const useSessionStore = defineStore('session', () => {
   const currentId = ref(saved?.currentId || saved?.dimensionId || '')
   const communityId = ref(saved?.communityId || '')
   const spaces = ref(Array.isArray(saved?.spaces) ? saved.spaces : [])
+  const adminSummary = ref(saved?.adminSummary || null)
 
   const current = computed(() => spaces.value.find((space) => space.id === currentId.value) || null)
 
@@ -54,7 +55,20 @@ export const useSessionStore = defineStore('session', () => {
       currentId: currentId.value,
       communityId: communityId.value,
       spaces: spaces.value,
+      adminSummary: adminSummary.value,
     }))
+  }
+
+  async function loadAdminSummary() {
+    if (!token.value || (role.value !== 'admin' && role.value !== 'moderator')) {
+      adminSummary.value = null
+      return
+    }
+    try {
+      adminSummary.value = await api('/api/admin/summary', { token: token.value })
+    } catch {
+      adminSummary.value = adminSummary.value || null
+    }
   }
 
   function ensureCurrent() {
@@ -126,6 +140,7 @@ export const useSessionStore = defineStore('session', () => {
         return
       }
     }
+    await loadAdminSummary()
     persist()
   }
 
@@ -167,6 +182,7 @@ export const useSessionStore = defineStore('session', () => {
     currentId.value = ''
     communityId.value = ''
     spaces.value = []
+    adminSummary.value = null
     sessionStorage.removeItem(sessionKey)
   }
 
@@ -181,7 +197,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   return {
-    token, userId, email, role, deviceId: deviceIdValue, dimensionId, currentId, communityId, spaces, current,
-    remember, select, register, login, logout, bootstrap, acceptInvite,
+    token, userId, email, role, deviceId: deviceIdValue, dimensionId, currentId, communityId, spaces, current, adminSummary,
+    remember, select, register, login, logout, bootstrap, acceptInvite, loadAdminSummary,
   }
 })

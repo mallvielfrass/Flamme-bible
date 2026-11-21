@@ -54,7 +54,7 @@ func (s *Server) songbookTree(w http.ResponseWriter, r *http.Request) {
 		       )
 		FROM songbooks b
 		JOIN dimensions d ON d.id = b.dimension_id
-		WHERE NOT b.hidden
+		WHERE NOT b.hidden AND b.hidden_at IS NULL
 		  AND (
 		        b.status = 'approved'
 		        OR EXISTS (

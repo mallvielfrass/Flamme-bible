@@ -321,6 +321,7 @@ summary { cursor: pointer; color: #8d6b32; }
   .plan-card-head { flex-wrap: wrap; }
   .plan-card-icons { flex-basis: 100%; margin-left: 0; }
   .nav-end { margin-left: 0; }
+  .admin-head, .admin-tools, .bulk-bar { flex-direction: column; align-items: stretch; }
   .modal-back { padding: 12px; align-items: stretch; }
   .modal { width: 100%; max-height: calc(100vh - 24px); }
 }
@@ -570,6 +571,261 @@ th, td {
 }
 
 main.auth-main { padding-top: 2rem; }
+
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  margin-left: 0.3rem;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background: var(--gold-strong);
+  color: var(--navy);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.admin-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.admin-head h1 { margin: 0; }
+
+.admin-summary { margin: 0; }
+
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 1.15rem;
+  margin: 0.8rem 0 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.05rem 0.55rem;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: inherit;
+  text-decoration: none;
+}
+
+.admin-tab.on { border-bottom-color: var(--navy); }
+
+.tab-count {
+  min-width: 1.15rem;
+  padding: 0 0.32rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 1.2rem;
+  text-align: center;
+}
+
+.tab-count.gold { background: var(--gold-strong); color: var(--navy); }
+.tab-count.muted { background: #e7e1d6; color: #6d6458; }
+
+.admin-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.7rem;
+}
+
+.admin-tools .search {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+
+.seg { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+
+.seg button {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.28rem 0.65rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.seg button.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+
+.bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0 0 0.7rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  background: var(--navy);
+  color: #fff;
+}
+
+.bulk-bar .btn {
+  width: auto;
+  margin: 0;
+  color: #fff;
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.data-table { font-size: 0.9rem; }
+
+.data-table th {
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  font-size: 0.78rem;
+}
+
+.data-table th, .data-table td { padding: 0.35rem 0.45rem; vertical-align: middle; }
+
+.data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.data-table .check, .data-table .chevron { width: 2rem; }
+
+.data-table .chevron .icon-btn.turned svg { transform: rotate(180deg); }
+
+.data-table tr.skeleton td span {
+  display: block;
+  height: 0.7rem;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #efe8dc, #f7f3eb, #efe8dc);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.status-badge i {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-badge.pending { color: #8a6a12; border-color: #e4d39a; background: #fbf6e4; }
+.status-badge.approved { color: #1f7a45; border-color: #b7d7c3; background: #f3faf6; }
+.status-badge.rejected { color: var(--danger); border-color: #e2c1c1; background: #fff6f4; }
+.status-badge.draft, .status-badge.kind { color: #6d6458; }
+.status-badge.live { color: #fff; background: #1f7a45; border-color: #1f7a45; }
+.status-badge.live i { background: #fff; }
+.status-badge.admin { color: #1a4f8a; border-color: #c5d4ea; background: #f4f8fc; }
+.status-badge.moderator { color: #5b3d8a; border-color: #d7cbe8; background: #f7f4fb; }
+
+.row-actions { display: flex; gap: 0.25rem; align-items: center; }
+
+.subline { margin: 0; color: #6d6458; font-size: 0.78rem; }
+
+.toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 40;
+  max-width: 22rem;
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+  border-radius: 8px;
+  background: var(--navy);
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 0.9rem;
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.7rem;
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.3rem 0 0.6rem; }
+
+.chips button {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+}
+
+.drop {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0.7rem;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.drop input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.progress {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #efe8dc;
+  overflow: hidden;
+}
+
+.progress span { display: block; height: 100%; background: var(--gold-strong); }
+
+.pill {
+  display: inline-block;
+  margin: 0.1rem 0.2rem 0.1rem 0;
+  padding: 0.08rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.pill.missing { border-style: dashed; color: #8a8175; }
+
+.menu { position: relative; }
+
+.menu-pop {
+  position: absolute;
+  z-index: 6;
+  right: 0;
+  min-width: 9rem;
+  padding: 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.menu-pop button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 0.35rem 0.45rem;
+  cursor: pointer;
+}
+
+.expand-grid { display: grid; gap: 0.35rem; font-size: 0.9rem; }
 
 .modal-back {
   position: fixed;

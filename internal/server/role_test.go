@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"testing"
 )
@@ -59,6 +60,42 @@ func TestRolesAndBootstrapAdmin(t *testing.T) {
 	mustJSON(t, raw, &logged)
 	if logged.Role != "admin" {
 		t.Fatalf("вход не поднял роль %s", logged.Role)
+	}
+}
+
+func TestModeratorQueueNotReleases(t *testing.T) {
+	t.Setenv("ADMIN_EMAIL", "admin@example.com")
+	srv := newTestServer(t)
+	owner := registerUser(t, srv, "owner@example.com", "secret-pass", nil)
+	admin := registerUser(t, srv, "admin@example.com", "secret-pass", nil)
+	mod := registerUser(t, srv, "mod@example.com", "secret-pass", nil)
+	if _, err := testPool.Exec(context.Background(), `UPDATE users SET role = 'moderator' WHERE email = 'mod@example.com'`); err != nil {
+		t.Fatal(err)
+	}
+	book := createBook(t, srv, owner.Token, owner.DimensionID, map[string]any{"fbid": "book", "title": "На проверку"})
+	code, raw := api(t, srv, owner.Token, http.MethodPost, "/api/songbooks/"+book.ID+"/submit", nil)
+	if code != http.StatusOK {
+		t.Fatalf("submit %d %s", code, raw)
+	}
+	code, raw = api(t, srv, mod.Token, http.MethodGet, "/api/admin/submissions", nil)
+	if code != http.StatusOK {
+		t.Fatalf("модератор очередь %d %s", code, raw)
+	}
+	code, raw = api(t, srv, mod.Token, http.MethodPost, "/api/admin/songbooks/"+book.ID+"/approve", nil)
+	if code != http.StatusOK {
+		t.Fatalf("модератор одобряет %d %s", code, raw)
+	}
+	code, raw = api(t, srv, mod.Token, http.MethodGet, "/api/admin/releases", nil)
+	if code != http.StatusForbidden {
+		t.Fatalf("модератор в релизах %d %s", code, raw)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/admin/summary", nil)
+	if code != http.StatusForbidden {
+		t.Fatalf("пользователь в сводке %d %s", code, raw)
+	}
+	code, raw = api(t, srv, admin.Token, http.MethodGet, "/api/admin/summary", nil)
+	if code != http.StatusOK {
+		t.Fatalf("админ сводка %d %s", code, raw)
 	}
 }
 

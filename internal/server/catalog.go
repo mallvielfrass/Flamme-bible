@@ -100,12 +100,12 @@ func (s *Server) decidePublish(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
-	role, err := membershipTx(ctx, tx, p.UserID, dimID)
-	if err != nil {
+	var siteRole string
+	if err := tx.QueryRow(ctx, `SELECT role FROM users WHERE id = $1`, p.UserID).Scan(&siteRole); err != nil {
 		writeMapped(w, err)
 		return
 	}
-	if role != "admin" {
+	if siteRole != "admin" {
 		writeMapped(w, errForbidden)
 		return
 	}
@@ -127,6 +127,14 @@ func (s *Server) decidePublish(w http.ResponseWriter, r *http.Request) {
 	}
 	view, err := scanBook(tx.QueryRow(ctx, `SELECT `+bookCols+` FROM songbooks WHERE id = $1`, id))
 	if err != nil {
+		writeMapped(w, err)
+		return
+	}
+	decision := "public:false"
+	if *body.Public {
+		decision = "public:true"
+	}
+	if err := writeAudit(ctx, tx, p.UserID, "publish_decision", "songbook", id, view.Title, decision); err != nil {
 		writeMapped(w, err)
 		return
 	}
@@ -294,7 +302,7 @@ const publicSongsSQL = `
 	SELECT s.songbook_id::text, s.fbid, s.title, s.parts
 	FROM songs s
 	JOIN songbooks b ON b.id = s.songbook_id
-	WHERE b.public AND b.status = 'approved' AND NOT s.deleted
+	WHERE b.public AND b.status = 'approved' AND b.hidden_at IS NULL AND NOT s.deleted
 	ORDER BY s.songbook_id, s.fbid`
 
 func (s *Server) publicSongs(ctx context.Context) ([]catalogSong, error) {

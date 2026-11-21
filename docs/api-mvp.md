@@ -2,7 +2,7 @@
 
 Новые маршруты лежат рядом с уже существующими `/register`, `/login`, `/dimensions` и `/songbooks`. Префикс `/api` у новых путей. Сессия та же: `Authorization: Bearer <token>`.
 
-Роль пользователя — `user` или `admin`. Поле `role` из тела регистрации не читается. Администратором становится адрес из `ADMIN_EMAIL` (сравнение без учёта регистра) в момент регистрации и повторно при входе. Пароль в окружении не задаётся.
+Роль пользователя — `user`, `moderator` или `admin`. Поле `role` из тела регистрации не читается. Администратором становится адрес из `ADMIN_EMAIL` (сравнение без учёта регистра) в момент регистрации и повторно при входе. Пароль в окружении не задаётся. Модератора назначает только администратор сайта. Модератор открывает `/admin`, очередь сборников и журнал. Релизы, пользователей, роли и общины он не меняет.
 
 Личный план принадлежит пользователю (`owner_user_id`). План общины принадлежит пространству `community` (`dimension_id`), участник должен состоять в нём. Сборники по-прежнему живут в пространстве: личное пространство создаётся при регистрации, община — отдельной записью.
 
@@ -155,15 +155,56 @@ songbook_section_songs (section_id, songbook_id, fbid, position)
 
 `GET /api/catalog/songbooks` и `GET /api/catalog/modules` без сессии отдают только `approved`. У сборника при этом ещё `public=true`. Старый `GET /catalog/matches` тоже смотрит только одобренные публичные песни. Свои черновики видны в `GET /dimensions/{id}/songbooks` и `GET /api/modules`.
 
-Только `role=admin`:
+`submitted_at` ставится, когда сборник или модуль уходит на проверку. Для уже лежавших в очереди строк берётся дата решения, а если её нет — время миграции.
 
-- `GET /api/admin/submissions?status=pending|draft|approved|rejected|all&kind=songbook|module`
-- `POST /api/admin/songbooks/{id}/approve`
-- `POST /api/admin/songbooks/{id}/reject` — тело `{"note":"причина"}`
-- `POST /api/admin/songbooks/{id}/revoke` — снимает с публикации, статус снова `draft`. Тело `{}` или `{"note":"..."}`
+`role=admin` или `role=moderator`:
+
+- `GET /api/admin/submissions?status=pending|draft|approved|rejected|hidden|all&kind=songbook|module&q=&sort=submitted&limit=&offset=`
+  Ответ: `submissions`, `total`, `counts`. В строке есть `community_name`, `author_email`, `short_name`, `songs_count` или `books_count`, `submitted_at`, у сборника ещё `publisher` и `patch_count`. По умолчанию статус `pending`, порядок — сначала давно отправленные. `q` ищет по названию, короткому имени и почте автора. `limit` по умолчанию 50, максимум 200.
+- `GET /api/admin/summary` — `pending_songbooks`, `pending_modules`, `draft_releases`, `active_version`.
+- `GET /api/admin/songbooks/{id}` — карточка, первые песни, число песен и похожие песни из каталога. Смотреть можно любой сборник, не только публичный.
+- `DELETE /api/admin/songbooks/{id}` — если есть патчи (`parent_id`), сборник и патчи получают `hidden_at` и пропадают из каталога, поиска, списка синхронизации и обычной очереди. Их видно при `status=hidden`. `POST /api/admin/songbooks/{id}/unhide` возвращает. Без патчей сборник удаляется вместе с песнями.
+- `DELETE /api/admin/modules/{id}` удаляет модуль, стихи и отрывки.
+- `DELETE /api/admin/communities/{id}` удаляет общину, её участников, приглашения, сборники и планы. Личное пространство так не удаляется.
+- `GET /api/admin/modules/{id}` — карточка, книги и число стихов из `module_verses`.
+- `POST /api/admin/songbooks/{id}/approve` и `reject` — только из `pending` или `rejected`. Иначе `409`.
+- `POST /api/admin/songbooks/{id}/reject` — тело `{"note":"причина"}`.
+- `POST /api/admin/songbooks/{id}/revoke` — только из `approved`, статус снова `draft`. Тело `{}` или `{"note":"..."}`. Иначе `409`.
 - те же три пути для `/api/admin/modules/{id}/...`
 
-Решение администратора пространства `POST /songbooks/{id}/publish/decision` сохранено: `public: true` ставит `approved`, `public: false` ставит `rejected`.
+`POST /songbooks/{id}/publish/decision` больше не обходит модерацию администратором общины. Вызов доступен только `role=admin` сайта: `public: true` ставит `approved`, `public: false` ставит `rejected`.
+
+## Общины для администратора сайта
+
+Администратор сайта управляет участниками любой общины, даже если сам в ней не состоит. Администратор общины по-прежнему видит своих.
+
+- `GET /api/admin/communities?q=&limit=&offset=` — название, адрес, числа участников, админов, сборников и планов, плюс `total`.
+- `GET /api/admin/communities/{id}/members` и `GET /api/communities/{id}/members` — `user_id`, `email`, `role`, `excluded`.
+- `POST /api/communities/{id}/members/{userID}/exclude` и `/include`. Старый `POST /dimensions/{id}/members/{userID}/exclude` работает для администратора общины.
+- `POST /api/communities/{id}/members/{userID}/role` — `{"role":"admin|member"}`. Последнего администратора общины снять нельзя.
+- `GET /api/communities/{id}/invites` — активные приглашения, `digest` это hex SHA-256 токена, исходный токен сервер не хранит.
+- `DELETE /api/communities/{id}/invites/{digest}` отзывает приглашение.
+- `POST /api/communities/{id}/invites` администратор сайта может вызвать для любой общины.
+
+## Пользователи
+
+Только `role=admin`.
+
+`users.created_at`, `users.blocked_at`, `users.last_seen_at`. Блокировка запрещает вход и обновление сессии и сразу отзывает семьи сессий. Материалы пользователя остаются.
+
+- `GET /api/admin/users?q=&role=user|moderator|admin&blocked=0|1&limit=&offset=` — `users`, `total`, `counts`.
+- `POST /api/admin/users/{id}/role` — `{"role":"user|moderator|admin"}`. Нельзя снять с себя права администратора. В системе остаётся хотя бы один администратор. Иначе `409`.
+- `POST /api/admin/users/{id}/block` и `/unblock`. Администратора и себя блокировать нельзя (`409`).
+- `POST /api/admin/users/{id}/sessions/revoke` — `session_families.revoked_at = now()`.
+- `DELETE /api/admin/users/{id}` — не себя и не последнего администратора. Личное пространство удаляется вместе со сборниками, планами и модулями. Членство в чужих общинах снимается, общины и их материалы остаются.
+
+`ADMIN_EMAIL` по-прежнему поднимает роль при регистрации и входе.
+
+## Журнал
+
+Таблица `admin_audit`: кто, когда, действие, вид и название цели, заметка. Строка пишется в той же транзакции, что и изменение: одобрение, отказ, снятие, скрытие и возврат, удаление, смена роли, блок, отзыв сессий, загрузка и публикация сборки, откат, удаление черновика, заметки к версии, исключение и возврат участника, смена роли в общине, отзыв приглашения, `publish/decision`.
+
+`GET /api/admin/audit?actor=&action=&target_kind=&limit=&offset=` — администратор и модератор. `actor` — id или часть почты. В строке есть `summary` по-русски. В карточке сборника и модуля поле `audit` — последние записи по этой цели.
 
 ## Релизы клиента
 
@@ -175,6 +216,8 @@ songbook_section_songs (section_id, songbook_id, fbid, position)
 
 - `POST /api/admin/releases` — `multipart/form-data`: `version`, файлы `linux_file`, `windows_file`, `macos_file` (хотя бы один), необязательные `notes` и `linux_sha256` / `windows_sha256` / `macos_sha256`. Хеш считает сервер. Если хеш передан и не совпал, запись не сохраняется. Повтор по версии `dev` обновляет только присланные файлы. Версия `released` не перезаписывается (`409`). Новый ряд — `201`, обновление — `200`.
 - `GET /api/admin/releases` — `active_version` и список.
+- `GET /api/admin/releases/{version}/download/{platform}` — файл черновика или опубликованной сборки, только администратор. Публичный `GET /api/releases/...` по-прежнему отдаёт только `released`.
+- `PATCH /api/admin/releases/{version}` — `{"notes":"..."}` для любой версии.
 - `POST /api/admin/releases/{version}/publish` — `dev` становится `released`, активная версия обновляется. Нужны непустые linux и windows. Повторный вызов для уже выпущенной версии снова делает её активной.
 - `DELETE /api/admin/releases/{version}` — только `dev`, вместе с каталогом файлов.
 

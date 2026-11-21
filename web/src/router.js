@@ -9,6 +9,7 @@ import SyncPage from './pages/SyncPage.vue'
 import SongbooksPage from './pages/SongbooksPage.vue'
 import PlansPage from './pages/PlansPage.vue'
 import AdminPage from './pages/AdminPage.vue'
+import AdminTab from './pages/AdminTab.vue'
 import DownloadPage from './pages/DownloadPage.vue'
 import AiChatPage from './pages/AiChatPage.vue'
 
@@ -23,7 +24,15 @@ export const router = createRouter({
     { path: '/plans', component: PlansPage },
     { path: '/ai', component: AiChatPage },
     { path: '/communities', component: SpacePage },
-    { path: '/admin', component: AdminPage, meta: { admin: true } },
+    { path: '/admin', redirect: '/admin/songbooks' },
+    {
+      path: '/admin/:tab',
+      component: AdminPage,
+      meta: { admin: true },
+      children: [
+        { path: '', component: AdminTab },
+      ],
+    },
     { path: '/dimensions/:id', component: SpacePage },
     { path: '/dimensions/:id/invite', component: SpacePage },
     { path: '/dimensions/:id/sync', component: SyncPage },

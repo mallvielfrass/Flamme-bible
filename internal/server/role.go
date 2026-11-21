@@ -21,6 +21,14 @@ func promoteBootstrapAdmin(ctx context.Context, tx pgx.Tx, userID, email string)
 }
 
 func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) (principal, bool) {
+	return s.requireRole(w, r, "admin")
+}
+
+func (s *Server) requireModerator(w http.ResponseWriter, r *http.Request) (principal, bool) {
+	return s.requireRole(w, r, "admin", "moderator")
+}
+
+func (s *Server) requireRole(w http.ResponseWriter, r *http.Request, allowed ...string) (principal, bool) {
 	p, err := s.principal(r)
 	if err != nil {
 		writeMapped(w, err)
@@ -32,11 +40,13 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) (principal
 		writeMapped(w, err)
 		return principal{}, false
 	}
-	if role != "admin" {
-		writeMapped(w, errForbidden)
-		return principal{}, false
+	for _, want := range allowed {
+		if role == want {
+			return p, true
+		}
 	}
-	return p, true
+	writeMapped(w, errForbidden)
+	return principal{}, false
 }
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {

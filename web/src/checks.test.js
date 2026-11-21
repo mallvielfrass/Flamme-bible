@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   bookStatus,
+  canApprove,
+  canReject,
+  canRevoke,
   canSubmit,
+  formatWhen,
+  moderationHint,
   clipPlanText,
   decodePlanText,
   importEncodingNotice,
@@ -22,6 +27,20 @@ describe('checks', () => {
     expect(bookStatus({ publish_requested: true })).toBe('на проверке')
     expect(bookStatus({})).toBe('черновик')
     expect(bookStatus({ status: 'rejected', public: true })).toBe('отклонено')
+  })
+
+  it('allows approve from pending or rejected and revoke only from approved', () => {
+    expect(canApprove('pending')).toBe(true)
+    expect(canApprove('rejected')).toBe(true)
+    expect(canApprove('approved')).toBe(false)
+    expect(canApprove('draft')).toBe(false)
+    expect(canReject('pending')).toBe(true)
+    expect(canReject('rejected')).toBe(false)
+    expect(canRevoke('approved')).toBe(true)
+    expect(canRevoke('pending')).toBe(false)
+    expect(moderationHint('revoke', 'pending')).toMatch(/одобрен/)
+    expect(formatWhen('')).toBe('—')
+    expect(formatWhen('2026-01-02T03:04:00Z')).toContain('2026')
   })
 
   it('allows submit only from a draft or a rejection', () => {

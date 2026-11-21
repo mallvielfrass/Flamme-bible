@@ -157,13 +157,8 @@ func (s *Server) createInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(ctx)
-	role, err := membershipTx(ctx, tx, p.UserID, dimID)
-	if err != nil {
+	if err := communityStaff(ctx, tx, p.UserID, dimID); err != nil {
 		writeMapped(w, err)
-		return
-	}
-	if role != "admin" {
-		writeMapped(w, errForbidden)
 		return
 	}
 	var kind string
@@ -305,6 +300,12 @@ func (s *Server) excludeMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := tx.Exec(ctx, `UPDATE memberships SET excluded = true WHERE dimension_id = $1 AND user_id = $2`, dimID, target); err != nil {
+		writeMapped(w, err)
+		return
+	}
+	var email string
+	_ = tx.QueryRow(ctx, `SELECT email FROM users WHERE id = $1`, target).Scan(&email)
+	if err := writeAudit(ctx, tx, p.UserID, "member_exclude", "member", target, email, dimID); err != nil {
 		writeMapped(w, err)
 		return
 	}

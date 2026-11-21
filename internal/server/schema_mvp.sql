@@ -4,7 +4,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user';
 
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 
-ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'));
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user', 'moderator', 'admin'));
 
 ALTER TABLE songbooks ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'draft';
 

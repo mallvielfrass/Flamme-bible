@@ -60,7 +60,8 @@ func artifactName(platform string) (string, error) {
 }
 
 func (s *Server) uploadRelease(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	p, ok := s.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 	root, err := releaseRoot()
@@ -156,6 +157,10 @@ func (s *Server) uploadRelease(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
+	if err := writeAudit(ctx, tx, p.UserID, "release_upload", "release", version, version, notes); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		writeMapped(w, err)
 		return
@@ -246,7 +251,8 @@ func (s *Server) listReleases(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) publishRelease(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	p, ok := s.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 	version := r.PathValue("version")
@@ -266,6 +272,7 @@ func (s *Server) publishRelease(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
+	wasReleased := rel.Status == "released"
 	if rel.LinuxSize <= 0 || rel.WindowsSize <= 0 || len(rel.LinuxSHA256) != 64 || len(rel.WindowsSHA256) != 64 {
 		writeMapped(w, errConflict)
 		return
@@ -300,6 +307,14 @@ func (s *Server) publishRelease(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
+	action := "release_publish"
+	if wasReleased {
+		action = "release_rollback"
+	}
+	if err := writeAudit(ctx, tx, p.UserID, action, "release", version, version, ""); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		writeMapped(w, err)
 		return
@@ -307,8 +322,63 @@ func (s *Server) publishRelease(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"active_version": version, "release": rel})
 }
 
+func (s *Server) patchReleaseNotes(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	version := r.PathValue("version")
+	if !validReleaseVersion(version) {
+		writeMapped(w, errRequest)
+		return
+	}
+	var body struct {
+		Notes string `json:"notes"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeMapped(w, errRequest)
+		return
+	}
+	notes := strings.TrimSpace(body.Notes)
+	if len(notes) > 4000 {
+		writeMapped(w, errRequest)
+		return
+	}
+	ctx := r.Context()
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		writeMapped(w, err)
+		return
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `UPDATE client_releases SET notes = $2 WHERE version = $1`, version, notes)
+	if err != nil {
+		writeMapped(w, err)
+		return
+	}
+	if tag.RowsAffected() != 1 {
+		writeMapped(w, errNotFound)
+		return
+	}
+	if err := writeAudit(ctx, tx, p.UserID, "release_notes", "release", version, version, notes); err != nil {
+		writeMapped(w, err)
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		writeMapped(w, err)
+		return
+	}
+	rel, err := loadRelease(ctx, s.db, version)
+	if err != nil {
+		writeMapped(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"release": rel})
+}
+
 func (s *Server) deleteRelease(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	p, ok := s.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 	version := r.PathValue("version")
@@ -338,6 +408,10 @@ func (s *Server) deleteRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM client_releases WHERE version = $1 AND status = 'dev'`, version); err != nil {
+		writeMapped(w, err)
+		return
+	}
+	if err := writeAudit(ctx, tx, p.UserID, "release_delete", "release", version, version, ""); err != nil {
 		writeMapped(w, err)
 		return
 	}
@@ -375,6 +449,17 @@ func (s *Server) latestRelease(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) downloadRelease(w http.ResponseWriter, r *http.Request) {
+	s.sendRelease(w, r, false)
+}
+
+func (s *Server) adminDownloadRelease(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAdmin(w, r); !ok {
+		return
+	}
+	s.sendRelease(w, r, true)
+}
+
+func (s *Server) sendRelease(w http.ResponseWriter, r *http.Request, draft bool) {
 	version := r.PathValue("version")
 	platform := r.PathValue("platform")
 	if !validReleaseVersion(version) {
@@ -392,7 +477,7 @@ func (s *Server) downloadRelease(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, errNotFound)
 		return
 	}
-	if rel.Status != "released" {
+	if rel.Status != "released" && !(draft && rel.Status == "dev") {
 		writeMapped(w, errNotFound)
 		return
 	}
