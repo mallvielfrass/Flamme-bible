@@ -19,6 +19,7 @@ func (s *Server) mountMVP(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/plans", s.createPlan)
 	mux.HandleFunc("GET /api/plans", s.listPlans)
 	mux.HandleFunc("POST /api/plans/import", s.importPlan)
+	mux.HandleFunc("POST /api/plans/parse", s.parsePlan)
 	mux.HandleFunc("GET /api/plans/{id}", s.getPlan)
 	mux.HandleFunc("PUT /api/plans/{id}", s.updatePlan)
 	mux.HandleFunc("DELETE /api/plans/{id}", s.deletePlan)

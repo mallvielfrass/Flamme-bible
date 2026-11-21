@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -278,5 +279,54 @@ func TestPlanImportKeepsMojibakeUntilAsked(t *testing.T) {
 	mustJSON(t, raw, &clean)
 	if clean.Mojibake {
 		t.Fatal("обычный план помечен")
+	}
+}
+
+func TestPlanParseDoesNotWrite(t *testing.T) {
+	srv := newTestServer(t)
+	owner := registerUser(t, srv, "owner@example.com", "secret-pass", nil)
+	payload := `<VisioBibleJournal><Journal Name="Text"><Item Caption="Тихая" Quote="мир" Class="-1"/></Journal></VisioBibleJournal>`
+	code, raw := api(t, srv, owner.Token, http.MethodPost, "/api/plans/parse", map[string]any{
+		"format": "vplt", "payload": payload,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("разбор %d %s", code, raw)
+	}
+	var parsed struct {
+		Title string     `json:"title"`
+		Items []planItem `json:"items"`
+	}
+	mustJSON(t, raw, &parsed)
+	if len(parsed.Items) != 1 || parsed.Items[0].Caption != "Тихая" {
+		t.Fatalf("пункты %+v", parsed.Items)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/plans?scope=all", nil)
+	if code != http.StatusOK {
+		t.Fatalf("список %d %s", code, raw)
+	}
+	var listed []planView
+	mustJSON(t, raw, &listed)
+	if len(listed) != 0 {
+		t.Fatalf("разбор записал план %+v", listed)
+	}
+	code, raw = api(t, srv, "", http.MethodPost, "/api/plans/parse", map[string]any{
+		"format": "vplt", "payload": payload,
+	})
+	if code != http.StatusUnauthorized {
+		t.Fatalf("без сессии %d %s", code, raw)
+	}
+	items := make([]planItem, 501)
+	for i := range items {
+		items[i] = planItem{Kind: "text", Caption: "a", Quote: "b"}
+	}
+	body, err := json.Marshal(map[string]any{"items": items})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodPost, "/api/plans/parse", map[string]any{
+		"format": "json", "payload": string(body),
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("лимит %d %s", code, raw)
 	}
 }

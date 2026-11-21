@@ -61,6 +61,8 @@
 
 `POST /api/plans/import` — `format` равен `json`, `vplt`, `history` или `plandef`. `payload` — текст. `title` необязателен.
 
+`POST /api/plans/parse` — то же тело `format` и `payload`, но план в базу не пишется. Ответ: `{"title","items","encoding_notice"}`. `encoding_notice` — те же поля, что импорт добавляет при подозрительной кодировке (`mojibake`, `encoding_warning`, `suggested_text`, `suggested_title`, `suggested_items`). Лимит пунктов и длины полей тот же, что у импорта: не больше 500 пунктов.
+
 Для `vplt`, `history` и `plandef` сервер не переписывает текст молча. Если payload — уже валидный UTF-8, но похож на кириллицу, прочитанную как windows-1251 или latin-1 и сохранённую снова, план записывается как прислан, а в ответ добавляются поля:
 
 - `mojibake`: `true`

@@ -134,6 +134,36 @@ func (s *Server) importPlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, planImportResult{planView: view, planEncodingNotice: encodingNotice(body.Format, body.Payload)})
 }
 
+func (s *Server) parsePlan(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.principal(r); err != nil {
+		writeMapped(w, err)
+		return
+	}
+	var body struct {
+		Format  string `json:"format"`
+		Payload string `json:"payload"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeMapped(w, errRequest)
+		return
+	}
+	title, items, err := parsePlanPayload(body.Format, []byte(body.Payload))
+	if err != nil {
+		writePlanErr(w, err)
+		return
+	}
+	items, err = normalizeItems(items)
+	if err != nil {
+		writePlanErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"title":           strings.TrimSpace(title),
+		"items":           items,
+		"encoding_notice": encodingNotice(body.Format, body.Payload),
+	})
+}
+
 func (s *Server) insertPlan(ctx context.Context, userID, title, dimensionID string, items []planItem) (planView, error) {
 	title = strings.TrimSpace(title)
 	if title == "" || utf8.RuneCountInString(title) > 200 {
