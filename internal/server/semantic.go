@@ -394,8 +394,12 @@ func (s *Server) searchSongsSemantic(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
-	book, dim, err := songSearchScope(r)
+	book, dim, section, err := songSearchScope(r)
 	if err != nil {
+		writeMapped(w, err)
+		return
+	}
+	if err := s.usableSection(r.Context(), p.UserID, section, book); err != nil {
 		writeMapped(w, err)
 		return
 	}
@@ -405,14 +409,16 @@ func (s *Server) searchSongsSemantic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.db.Query(r.Context(), `
-		SELECT s.songbook_id::text, s.fbid, s.title, b.title, b.dimension_id::text, b.status, s.parts
+		SELECT s.songbook_id::text, s.fbid, s.title, b.title, b.dimension_id::text, b.status,
+		       `+sectionTitleSQL+`, s.parts
 		FROM song_embeddings e
 		JOIN songs s ON s.songbook_id = e.songbook_id AND s.fbid = e.fbid
 		JOIN songbooks b ON b.id = s.songbook_id
 		WHERE `+songAccessWhere("$2", "$3", "$4")+`
+		  `+sectionWhere("$6")+`
 		ORDER BY e.embedding <=> $1::vector
 		LIMIT $5
-	`, vectorLiteral(vec), book, dim, p.UserID, limit)
+	`, vectorLiteral(vec), book, dim, p.UserID, limit, section)
 	if err != nil {
 		writeMapped(w, err)
 		return
@@ -422,7 +428,7 @@ func (s *Server) searchSongsSemantic(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var hit semanticSongHit
 		var parts []byte
-		if err := rows.Scan(&hit.SongbookID, &hit.FBID, &hit.Title, &hit.SongbookTitle, &hit.DimensionID, &hit.Status, &parts); err != nil {
+		if err := rows.Scan(&hit.SongbookID, &hit.FBID, &hit.Title, &hit.SongbookTitle, &hit.DimensionID, &hit.Status, &hit.SectionTitle, &parts); err != nil {
 			writeMapped(w, err)
 			return
 		}

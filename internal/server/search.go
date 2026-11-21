@@ -1,11 +1,14 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type songHit struct {
@@ -15,6 +18,7 @@ type songHit struct {
 	SongbookTitle string `json:"songbook_title"`
 	DimensionID   string `json:"dimension_id"`
 	Status        string `json:"status"`
+	SectionTitle  string `json:"section_title,omitempty"`
 }
 
 func (s *Server) searchSongs(w http.ResponseWriter, r *http.Request) {
@@ -46,16 +50,22 @@ func (s *Server) searchSongs(w http.ResponseWriter, r *http.Request) {
 		}
 		offset = n
 	}
-	bookArg, dimArg, err := songSearchScope(r)
+	bookArg, dimArg, sectionArg, err := songSearchScope(r)
 	if err != nil {
 		writeMapped(w, err)
 		return
 	}
+	if err := s.usableSection(r.Context(), p.UserID, sectionArg, bookArg); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	rows, err := s.db.Query(r.Context(), `
-		SELECT s.songbook_id::text, s.fbid, s.title, b.title, b.dimension_id::text, b.status
+		SELECT s.songbook_id::text, s.fbid, s.title, b.title, b.dimension_id::text, b.status,
+		       `+sectionTitleSQL+`
 		FROM songs s
 		JOIN songbooks b ON b.id = s.songbook_id
 		WHERE `+songAccessWhere("$2", "$3", "$4")+`
+		  `+sectionWhere("$7")+`
 		  AND (
 		        s.title ILIKE $1 ESCAPE '\'
 		        OR s.alt_title ILIKE $1 ESCAPE '\'
@@ -67,7 +77,7 @@ func (s *Server) searchSongs(w http.ResponseWriter, r *http.Request) {
 		      )
 		ORDER BY s.title, s.songbook_id, s.fbid
 		LIMIT $5 OFFSET $6
-	`, likeContains(q), bookArg, dimArg, p.UserID, limit, offset)
+	`, likeContains(q), bookArg, dimArg, p.UserID, limit, offset, sectionArg)
 	if err != nil {
 		writeMapped(w, err)
 		return
@@ -76,7 +86,7 @@ func (s *Server) searchSongs(w http.ResponseWriter, r *http.Request) {
 	hits := []songHit{}
 	for rows.Next() {
 		var hit songHit
-		if err := rows.Scan(&hit.SongbookID, &hit.FBID, &hit.Title, &hit.SongbookTitle, &hit.DimensionID, &hit.Status); err != nil {
+		if err := rows.Scan(&hit.SongbookID, &hit.FBID, &hit.Title, &hit.SongbookTitle, &hit.DimensionID, &hit.Status, &hit.SectionTitle); err != nil {
 			writeMapped(w, err)
 			return
 		}
@@ -104,11 +114,60 @@ func songAccessWhere(bookArg, dimArg, userArg string) string {
 		      )`, bookArg, bookArg, dimArg, dimArg, userArg)
 }
 
-func songSearchScope(r *http.Request) (book any, dim any, err error) {
+const sectionTitleSQL = `COALESCE((
+  SELECT sec.title
+  FROM songbook_section_songs ss
+  JOIN songbook_sections sec ON sec.id = ss.section_id
+  WHERE ss.songbook_id = s.songbook_id AND ss.fbid = s.fbid
+  ORDER BY sec.position, sec.title, sec.id
+  LIMIT 1
+), '')`
+
+func sectionWhere(arg string) string {
+	return fmt.Sprintf(`AND (%s::uuid IS NULL OR EXISTS (
+		SELECT 1 FROM songbook_section_songs filter_ss
+		WHERE filter_ss.section_id = %s::uuid
+		  AND filter_ss.songbook_id = s.songbook_id
+		  AND filter_ss.fbid = s.fbid
+	))`, arg, arg)
+}
+
+func (s *Server) usableSection(ctx context.Context, userID string, section, book any) error {
+	raw, _ := section.(string)
+	if raw == "" {
+		return nil
+	}
+	var bookID string
+	err := s.db.QueryRow(ctx, `
+		SELECT sec.songbook_id::text
+		FROM songbook_sections sec
+		JOIN songbooks b ON b.id = sec.songbook_id
+		WHERE sec.id = $1
+		  AND (
+		        b.status = 'approved'
+		        OR EXISTS (
+		            SELECT 1 FROM memberships m
+		            WHERE m.dimension_id = b.dimension_id AND m.user_id = $2 AND NOT m.excluded
+		        )
+		      )
+	`, raw, userID).Scan(&bookID)
+	if err == pgx.ErrNoRows {
+		return errNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if id, ok := book.(string); ok && id != "" && id != bookID {
+		return errRequest
+	}
+	return nil
+}
+
+func songSearchScope(r *http.Request) (book any, dim any, section any, err error) {
 	songbookID := strings.TrimSpace(r.URL.Query().Get("songbook_id"))
 	if songbookID != "" {
 		if !validUUID(songbookID) {
-			return nil, nil, errRequest
+			return nil, nil, nil, errRequest
 		}
 		book = songbookID
 	}
@@ -118,11 +177,17 @@ func songSearchScope(r *http.Request) (book any, dim any, err error) {
 	}
 	if dimensionID != "" {
 		if !validUUID(dimensionID) {
-			return nil, nil, errRequest
+			return nil, nil, nil, errRequest
 		}
 		dim = dimensionID
 	}
-	return book, dim, nil
+	if raw := strings.TrimSpace(r.URL.Query().Get("section_id")); raw != "" {
+		if !validUUID(raw) {
+			return nil, nil, nil, errRequest
+		}
+		section = raw
+	}
+	return book, dim, section, nil
 }
 
 func likeContains(q string) string {

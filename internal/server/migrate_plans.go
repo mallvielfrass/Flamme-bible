@@ -12,8 +12,14 @@ import (
 //go:embed schema_items_time.sql
 var schemaItemsTimeSQL string
 
+//go:embed schema_sections.sql
+var schemaSectionsSQL string
+
 func migratePlansUI(ctx context.Context, db *pgxpool.Pool) error {
-	return execStatements(ctx, db, schemaItemsTimeSQL, "времена пунктов")
+	if err := execStatements(ctx, db, schemaItemsTimeSQL, "времена пунктов"); err != nil {
+		return err
+	}
+	return execStatements(ctx, db, schemaSectionsSQL, "разделы сборников")
 }
 
 func execStatements(ctx context.Context, db *pgxpool.Pool, sql, name string) error {

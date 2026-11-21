@@ -27,6 +27,13 @@ func (s *Server) mountMVP(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/plans/{id}/pull", s.pullPlan)
 	mux.HandleFunc("GET /api/plans/{id}/export", s.exportPlan)
 
+	mux.HandleFunc("GET /api/songbooks/tree", s.songbookTree)
+	mux.HandleFunc("GET /api/songbooks/{id}/sections", s.listSections)
+	mux.HandleFunc("POST /api/songbooks/{id}/sections", s.createSection)
+	mux.HandleFunc("PUT /api/songbooks/{id}/sections/{sectionID}", s.renameSection)
+	mux.HandleFunc("DELETE /api/songbooks/{id}/sections/{sectionID}", s.deleteSection)
+	mux.HandleFunc("PUT /api/sections/{id}/songs", s.setSectionSongs)
+
 	mux.HandleFunc("GET /api/songs/search", s.searchSongs)
 	mux.HandleFunc("GET /api/songs/semantic", s.searchSongsSemantic)
 	mux.HandleFunc("GET /api/bible/semantic", s.searchBibleSemantic)

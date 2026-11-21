@@ -53,7 +53,8 @@ func resetDB(t *testing.T) {
 	_, err := dbPool(t).Exec(context.Background(), `
 		TRUNCATE bible_passages, module_verses, song_embeddings,
 		         plan_items, plans, modules, client_releases, app_settings,
-		         song_hides, conflicts, operation_results, change_log, song_order, songs, songbooks,
+		         song_hides, conflicts, operation_results, change_log, song_order,
+		         songbook_section_songs, songbook_sections, songs, songbooks,
 		         invites, session_tokens, session_families, devices, memberships, sync_counters,
 		         dimensions, users
 	`)

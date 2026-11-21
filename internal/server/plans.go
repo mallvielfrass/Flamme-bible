@@ -31,6 +31,8 @@ type planItem struct {
 	Position              int       `json:"position"`
 	CreatedAt             time.Time `json:"created_at,omitempty"`
 	UpdatedAt             time.Time `json:"updated_at,omitempty"`
+	SongbookTitle         string    `json:"songbook_title,omitempty"`
+	SectionTitle          string    `json:"section_title,omitempty"`
 }
 
 type planView struct {
@@ -556,12 +558,23 @@ func loadPlan(ctx context.Context, q planQuerier, id string) (planView, error) {
 	}
 	view.UpdatedAt = view.UpdatedAt.UTC()
 	rows, err := q.Query(ctx, `
-		SELECT id::text, position, kind, song_id, songbook_id::text, title,
-		       module_short_name, module_short_name_second, book, chapter, verse,
-		       caption, reference, quote, class, created_at, updated_at
-		FROM plan_items
-		WHERE plan_id = $1
-		ORDER BY position, id
+		SELECT pi.id::text, pi.position, pi.kind, pi.song_id, pi.songbook_id::text, pi.title,
+		       pi.module_short_name, pi.module_short_name_second, pi.book, pi.chapter, pi.verse,
+		       pi.caption, pi.reference, pi.quote, pi.class, pi.created_at, pi.updated_at,
+		       COALESCE(b.title, ''),
+		       COALESCE((
+		         SELECT sec.title
+		         FROM songbook_section_songs ss
+		         JOIN songbook_sections sec ON sec.id = ss.section_id
+		         WHERE pi.songbook_id IS NOT NULL
+		           AND ss.songbook_id = pi.songbook_id AND ss.fbid = pi.song_id
+		         ORDER BY sec.position, sec.title, sec.id
+		         LIMIT 1
+		       ), '')
+		FROM plan_items pi
+		LEFT JOIN songbooks b ON b.id = pi.songbook_id
+		WHERE pi.plan_id = $1
+		ORDER BY pi.position, pi.id
 	`, id)
 	if err != nil {
 		return planView{}, err
@@ -575,6 +588,7 @@ func loadPlan(ctx context.Context, q planQuerier, id string) (planView, error) {
 			&item.ID, &item.Position, &item.Kind, &item.SongID, &songbook, &item.Title,
 			&item.ModuleShortName, &item.ModuleShortNameSecond, &item.Book, &item.Chapter, &item.Verse,
 			&item.Caption, &item.Reference, &item.Quote, &item.Class, &item.CreatedAt, &item.UpdatedAt,
+			&item.SongbookTitle, &item.SectionTitle,
 		); err != nil {
 			return planView{}, err
 		}
