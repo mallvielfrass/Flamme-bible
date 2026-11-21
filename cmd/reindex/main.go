@@ -68,7 +68,7 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Printf("песни: заново %d, без изменений %d\n", stats.SongsEmbedded, stats.SongsSkipped)
+	fmt.Printf("части песен: заново %d, без изменений %d\n", stats.SongsEmbedded, stats.SongsSkipped)
 	fmt.Printf("модули: %d, отрывки заново %d, без изменений %d\n", stats.Modules, stats.PassagesEmbedded, stats.PassagesSkipped)
 	return 0
 }
