@@ -2,10 +2,12 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { api, explain } from '../../api'
 import { formatWhen } from '../../checks'
+import { userStats } from '../../stats'
 import { useSessionStore } from '../../stores/session'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import DataTable from '../DataTable.vue'
 import IconButton from '../IconButton.vue'
+import StatChips from '../StatChips.vue'
 import StatusBadge from '../StatusBadge.vue'
 
 const session = useSessionStore()
@@ -27,13 +29,12 @@ const confirms = ref(null)
 let toastTimer = 0
 
 const columns = [
-  { key: 'email', label: 'Почта' },
+  { key: 'email', label: 'Почта', class: 'col-grow' },
   { key: 'role', label: 'Роль' },
-  { key: 'communities', label: 'Общины', align: 'right' },
-  { key: 'devices', label: 'Устройства', align: 'right' },
-  { key: 'created', label: 'Регистрация' },
-  { key: 'seen', label: 'Вход' },
-  { key: 'actions', label: '' },
+  { key: 'composition', label: 'Состав', class: 'col-stats' },
+  { key: 'created', label: 'Регистрация', class: 'col-when' },
+  { key: 'seen', label: 'Вход', class: 'col-when' },
+  { key: 'actions', label: '', class: 'col-actions' },
 ]
 
 const filters = computed(() => {
@@ -187,13 +188,17 @@ watch(filter, () => { offset.value = 0; selected.value = []; load() })
       @update:selected="selected = $event"
       @retry="load"
     >
-      <template #cell-email="{ row }">{{ row.email }}</template>
+      <template #cell-email="{ row }">
+        <span>{{ row.email }}</span>
+        <StatChips class="stats-under" :items="userStats(row)" />
+      </template>
       <template #cell-role="{ row }">
         <StatusBadge :status="row.role" />
         <StatusBadge v-if="row.blocked" status="blocked" />
       </template>
-      <template #cell-communities="{ row }">{{ row.communities }}</template>
-      <template #cell-devices="{ row }">{{ row.devices }}</template>
+      <template #cell-composition="{ row }">
+        <StatChips :items="userStats(row)" />
+      </template>
       <template #cell-created="{ row }">{{ formatWhen(row.created_at) }}</template>
       <template #cell-seen="{ row }">{{ formatWhen(row.last_seen_at) }}</template>
       <template #cell-actions="{ row }">

@@ -2,11 +2,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { api, explain } from '../../api'
 import { formatWhen } from '../../checks'
+import { communityStats } from '../../stats'
 import { useSessionStore } from '../../stores/session'
 import AppModal from '../AppModal.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import DataTable from '../DataTable.vue'
 import IconButton from '../IconButton.vue'
+import StatChips from '../StatChips.vue'
 
 const session = useSessionStore()
 const q = ref('')
@@ -28,13 +30,10 @@ const confirms = ref(null)
 let toastTimer = 0
 
 const columns = [
-  { key: 'name', label: 'Название' },
-  { key: 'address', label: 'Адрес' },
-  { key: 'members', label: 'Участники', align: 'right' },
-  { key: 'admins', label: 'Админы', align: 'right' },
-  { key: 'songbooks', label: 'Сборники', align: 'right' },
-  { key: 'plans', label: 'Планы', align: 'right' },
-  { key: 'actions', label: '' },
+  { key: 'name', label: 'Название', class: 'col-grow' },
+  { key: 'address', label: 'Адрес', class: 'col-address' },
+  { key: 'composition', label: 'Состав', class: 'col-stats' },
+  { key: 'actions', label: '', class: 'col-actions' },
 ]
 
 const tableRows = computed(() => rows.value.map((row) => ({ ...row, key: row.id })))
@@ -207,12 +206,12 @@ watch(q, () => {})
     <template #cell-name="{ row }">
       <strong>{{ row.name }}</strong>
       <p v-if="row.confession" class="subline">{{ row.confession }}</p>
+      <StatChips class="stats-under" :items="communityStats(row)" />
     </template>
     <template #cell-address="{ row }">{{ row.address }}</template>
-    <template #cell-members="{ row }">{{ row.members ?? '—' }}</template>
-    <template #cell-admins="{ row }">{{ row.admins ?? '—' }}</template>
-    <template #cell-songbooks="{ row }">{{ row.songbooks ?? '—' }}</template>
-    <template #cell-plans="{ row }">{{ row.plans ?? '—' }}</template>
+    <template #cell-composition="{ row }">
+      <StatChips :items="communityStats(row)" />
+    </template>
     <template #cell-actions="{ row }">
       <div class="row-actions">
         <IconButton icon="link" tone="green" label="Создать приглашение" @click="inviteFor = row; inviteLink = ''" />

@@ -694,6 +694,17 @@ main.auth-main { padding-top: 2rem; }
 
 .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 
+.data-table .col-grow { width: 100%; }
+
+.data-table .col-stats,
+.data-table .col-actions,
+.data-table .col-when { width: 1%; white-space: nowrap; }
+
+.data-table .col-stats,
+.data-table .col-address { min-width: max-content; }
+
+.data-table .col-address { width: 1%; white-space: nowrap; }
+
 .data-table .check, .data-table .chevron { width: 2rem; }
 
 .data-table .chevron .icon-btn.turned svg { transform: rotate(180deg); }
@@ -734,7 +745,7 @@ main.auth-main { padding-top: 2rem; }
 .status-badge.admin { color: #1a4f8a; border-color: #c5d4ea; background: #f4f8fc; }
 .status-badge.moderator { color: #5b3d8a; border-color: #d7cbe8; background: #f7f4fb; }
 
-.row-actions { display: flex; gap: 0.25rem; align-items: center; }
+.row-actions { display: flex; gap: 0.25rem; align-items: center; justify-content: flex-end; }
 
 .subline { margin: 0; color: #6d6458; font-size: 0.78rem; }
 
@@ -805,7 +816,77 @@ main.auth-main { padding-top: 2rem; }
 
 .pill.missing { border-style: dashed; color: #8a8175; }
 
-.menu { position: relative; }
+.emoji {
+  width: 1.1em;
+  height: 1.1em;
+  display: block;
+  flex: none;
+}
+
+.stat-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.col-stats .stat-chips { flex-wrap: nowrap; }
+
+.stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  padding: 0.08rem 0.42rem 0.08rem 0.28rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-num { font-variant-numeric: tabular-nums; }
+
+.stat-chip.zero {
+  color: #8a8175;
+  border-style: dashed;
+  background: transparent;
+}
+
+.stat-chip.zero .emoji { opacity: 0.45; }
+
+.stats-under { display: none; margin-top: 0.35rem; }
+
+@media (max-width: 720px) {
+  .data-table th,
+  .data-table td {
+    vertical-align: top;
+    padding-left: 0.28rem;
+    padding-right: 0.28rem;
+  }
+  .data-table .col-stats { display: none; }
+  .data-table .col-address,
+  .data-table .col-when { white-space: normal; min-width: 0; width: auto; }
+  .stats-under { display: flex; width: 100%; }
+}
+
+details.menu {
+  position: relative;
+  top: auto;
+  left: auto;
+  z-index: auto;
+  min-width: 0;
+  max-height: none;
+  overflow: visible;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
 
 .menu-pop {
   position: absolute;
