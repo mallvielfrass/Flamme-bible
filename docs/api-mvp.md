@@ -43,6 +43,8 @@
 - `bible` — `module_short_name` (например `RST`), необязательный `module_short_name_second`, `book`, `chapter`, `verse`, `reference`, `quote`
 - `text` — `caption`, `reference`, `quote`, `class` (если пустой, сервер ставит `-1`)
 
+У пункта есть `created_at` и `updated_at`. Клиент их не задаёт: сервер оставляет `created_at` при том же id, а `updated_at` меняет только если изменился текст пункта. Перестановка места `updated_at` не двигает. В JSON эти поля есть. В `plan.vplt`, History.ini и PlanDef.ini их нет: VisioBible их не хранит.
+
 `POST /api/plans`
 
 ```json

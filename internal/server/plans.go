@@ -14,21 +14,23 @@ import (
 )
 
 type planItem struct {
-	ID                    string `json:"id"`
-	Kind                  string `json:"kind"`
-	SongID                string `json:"song_id"`
-	SongbookID            string `json:"songbook_id"`
-	Title                 string `json:"title"`
-	ModuleShortName       string `json:"module_short_name"`
-	ModuleShortNameSecond string `json:"module_short_name_second"`
-	Book                  int    `json:"book"`
-	Chapter               int    `json:"chapter"`
-	Verse                 int    `json:"verse"`
-	Caption               string `json:"caption"`
-	Reference             string `json:"reference"`
-	Quote                 string `json:"quote"`
-	Class                 string `json:"class"`
-	Position              int    `json:"position"`
+	ID                    string    `json:"id"`
+	Kind                  string    `json:"kind"`
+	SongID                string    `json:"song_id"`
+	SongbookID            string    `json:"songbook_id"`
+	Title                 string    `json:"title"`
+	ModuleShortName       string    `json:"module_short_name"`
+	ModuleShortNameSecond string    `json:"module_short_name_second"`
+	Book                  int       `json:"book"`
+	Chapter               int       `json:"chapter"`
+	Verse                 int       `json:"verse"`
+	Caption               string    `json:"caption"`
+	Reference             string    `json:"reference"`
+	Quote                 string    `json:"quote"`
+	Class                 string    `json:"class"`
+	Position              int       `json:"position"`
+	CreatedAt             time.Time `json:"created_at,omitempty"`
+	UpdatedAt             time.Time `json:"updated_at,omitempty"`
 }
 
 type planView struct {
@@ -556,7 +558,7 @@ func loadPlan(ctx context.Context, q planQuerier, id string) (planView, error) {
 	rows, err := q.Query(ctx, `
 		SELECT id::text, position, kind, song_id, songbook_id::text, title,
 		       module_short_name, module_short_name_second, book, chapter, verse,
-		       caption, reference, quote, class
+		       caption, reference, quote, class, created_at, updated_at
 		FROM plan_items
 		WHERE plan_id = $1
 		ORDER BY position, id
@@ -572,10 +574,12 @@ func loadPlan(ctx context.Context, q planQuerier, id string) (planView, error) {
 		if err := rows.Scan(
 			&item.ID, &item.Position, &item.Kind, &item.SongID, &songbook, &item.Title,
 			&item.ModuleShortName, &item.ModuleShortNameSecond, &item.Book, &item.Chapter, &item.Verse,
-			&item.Caption, &item.Reference, &item.Quote, &item.Class,
+			&item.Caption, &item.Reference, &item.Quote, &item.Class, &item.CreatedAt, &item.UpdatedAt,
 		); err != nil {
 			return planView{}, err
 		}
+		item.CreatedAt = item.CreatedAt.UTC()
+		item.UpdatedAt = item.UpdatedAt.UTC()
 		if songbook != nil {
 			item.SongbookID = *songbook
 		}
@@ -587,11 +591,72 @@ func loadPlan(ctx context.Context, q planQuerier, id string) (planView, error) {
 	return view, nil
 }
 
+type keptItem struct {
+	created time.Time
+	updated time.Time
+	body    string
+}
+
+func itemBody(item planItem) string {
+	return strings.Join([]string{
+		item.Kind,
+		item.SongID,
+		item.SongbookID,
+		item.Title,
+		item.ModuleShortName,
+		item.ModuleShortNameSecond,
+		strconv.Itoa(item.Book),
+		strconv.Itoa(item.Chapter),
+		strconv.Itoa(item.Verse),
+		item.Caption,
+		item.Reference,
+		item.Quote,
+		item.Class,
+	}, "\x1f")
+}
+
 func replaceItems(ctx context.Context, tx pgx.Tx, planID string, items []planItem) error {
+	rows, err := tx.Query(ctx, `
+		SELECT id::text, created_at, updated_at, kind, song_id, COALESCE(songbook_id::text, ''), title,
+		       module_short_name, module_short_name_second, book, chapter, verse,
+		       caption, reference, quote, class
+		FROM plan_items
+		WHERE plan_id = $1
+	`, planID)
+	if err != nil {
+		return err
+	}
+	old := map[string]keptItem{}
+	for rows.Next() {
+		var item planItem
+		var created, updated time.Time
+		if err := rows.Scan(
+			&item.ID, &created, &updated, &item.Kind, &item.SongID, &item.SongbookID, &item.Title,
+			&item.ModuleShortName, &item.ModuleShortNameSecond, &item.Book, &item.Chapter, &item.Verse,
+			&item.Caption, &item.Reference, &item.Quote, &item.Class,
+		); err != nil {
+			rows.Close()
+			return err
+		}
+		old[item.ID] = keptItem{created: created.UTC(), updated: updated.UTC(), body: itemBody(item)}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
 	if _, err := tx.Exec(ctx, `DELETE FROM plan_items WHERE plan_id = $1`, planID); err != nil {
 		return err
 	}
+	now := time.Now().UTC()
 	for _, item := range items {
+		created, updated := now, now
+		if prev, ok := old[item.ID]; ok {
+			created = prev.created
+			if prev.body == itemBody(item) {
+				updated = prev.updated
+			}
+		}
 		var songbook any
 		if item.SongbookID != "" {
 			songbook = item.SongbookID
@@ -600,15 +665,15 @@ func replaceItems(ctx context.Context, tx pgx.Tx, planID string, items []planIte
 			INSERT INTO plan_items (
 				id, plan_id, position, kind, song_id, songbook_id, title,
 				module_short_name, module_short_name_second, book, chapter, verse,
-				caption, reference, quote, class
+				caption, reference, quote, class, created_at, updated_at
 			) VALUES (
 				$1,$2,$3,$4,$5,$6,$7,
 				$8,$9,$10,$11,$12,
-				$13,$14,$15,$16
+				$13,$14,$15,$16,$17,$18
 			)
 		`, item.ID, planID, item.Position, item.Kind, item.SongID, songbook, item.Title,
 			item.ModuleShortName, item.ModuleShortNameSecond, item.Book, item.Chapter, item.Verse,
-			item.Caption, item.Reference, item.Quote, item.Class); err != nil {
+			item.Caption, item.Reference, item.Quote, item.Class, created, updated); err != nil {
 			return err
 		}
 	}
