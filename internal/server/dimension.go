@@ -303,6 +303,12 @@ func (s *Server) excludeMember(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
+	var email string
+	_ = tx.QueryRow(ctx, `SELECT email FROM users WHERE id = $1`, target).Scan(&email)
+	if err := writeAudit(ctx, tx, p.UserID, "member_exclude", "member", target, email, dimID); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		writeMapped(w, err)
 		return

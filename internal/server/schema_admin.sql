@@ -31,3 +31,16 @@ ALTER TABLE modules DROP CONSTRAINT IF EXISTS modules_reviewed_by_fkey;
 ALTER TABLE modules ADD CONSTRAINT modules_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES users (id) ON DELETE SET NULL;
 
 ALTER TABLE songbooks ADD COLUMN IF NOT EXISTS hidden_at timestamptz;
+
+CREATE TABLE IF NOT EXISTS admin_audit (
+  id uuid PRIMARY KEY,
+  at timestamptz NOT NULL DEFAULT now(),
+  actor_id uuid REFERENCES users (id) ON DELETE SET NULL,
+  action text NOT NULL,
+  target_kind text NOT NULL,
+  target_id text NOT NULL DEFAULT '',
+  target_title text NOT NULL DEFAULT '',
+  note text NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS admin_audit_at_idx ON admin_audit (at DESC);

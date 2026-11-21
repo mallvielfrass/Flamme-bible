@@ -210,7 +210,17 @@ func (s *Server) setExcluded(w http.ResponseWriter, r *http.Request, excluded bo
 			return
 		}
 	}
+	var email string
+	_ = tx.QueryRow(ctx, `SELECT email FROM users WHERE id = $1`, target).Scan(&email)
 	if _, err := tx.Exec(ctx, `UPDATE memberships SET excluded = $3 WHERE dimension_id = $1 AND user_id = $2`, dimID, target, excluded); err != nil {
+		writeMapped(w, err)
+		return
+	}
+	action := "member_include"
+	if excluded {
+		action = "member_exclude"
+	}
+	if err := writeAudit(ctx, tx, p.UserID, action, "member", target, email, dimID); err != nil {
 		writeMapped(w, err)
 		return
 	}
@@ -272,7 +282,13 @@ func (s *Server) setMemberRole(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var email string
+	_ = tx.QueryRow(ctx, `SELECT email FROM users WHERE id = $1`, target).Scan(&email)
 	if _, err := tx.Exec(ctx, `UPDATE memberships SET role = $3 WHERE dimension_id = $1 AND user_id = $2`, dimID, target, body.Role); err != nil {
+		writeMapped(w, err)
+		return
+	}
+	if err := writeAudit(ctx, tx, p.UserID, "member_role", "member", target, email, body.Role); err != nil {
 		writeMapped(w, err)
 		return
 	}
@@ -364,6 +380,10 @@ func (s *Server) revokeInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	if tag.RowsAffected() != 1 {
 		writeMapped(w, errNotFound)
+		return
+	}
+	if err := writeAudit(ctx, tx, p.UserID, "invite_revoke", "invite", digest, digest, dimID); err != nil {
+		writeMapped(w, err)
 		return
 	}
 	if err := tx.Commit(ctx); err != nil {

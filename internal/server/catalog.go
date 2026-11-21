@@ -130,6 +130,14 @@ func (s *Server) decidePublish(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
+	decision := "public:false"
+	if *body.Public {
+		decision = "public:true"
+	}
+	if err := writeAudit(ctx, tx, p.UserID, "publish_decision", "songbook", id, view.Title, decision); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		writeMapped(w, err)
 		return

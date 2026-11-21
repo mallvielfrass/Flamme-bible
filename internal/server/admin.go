@@ -470,6 +470,10 @@ func (s *Server) moderateSongbook(w http.ResponseWriter, r *http.Request, p prin
 		writeMapped(w, err)
 		return
 	}
+	if err := writeAudit(ctx, tx, p.UserID, moderationAction(status), "songbook", id, view.Title, note); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		writeMapped(w, err)
 		return
@@ -512,6 +516,10 @@ func (s *Server) moderateModule(w http.ResponseWriter, r *http.Request, p princi
 		writeMapped(w, err)
 		return
 	}
+	if err := writeAudit(ctx, tx, p.UserID, moderationAction(status), "module", id, view.Title, note); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		writeMapped(w, err)
 		return
@@ -549,6 +557,17 @@ func validModerationStatus(status string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func moderationAction(status string) string {
+	switch status {
+	case "approved":
+		return "approve"
+	case "rejected":
+		return "reject"
+	default:
+		return "revoke"
 	}
 }
 

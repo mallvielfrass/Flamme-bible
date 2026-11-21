@@ -175,7 +175,16 @@ func (s *Server) adminSetRole(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var email string
+	if err := tx.QueryRow(ctx, `SELECT email FROM users WHERE id = $1`, id).Scan(&email); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	if _, err := tx.Exec(ctx, `UPDATE users SET role = $2 WHERE id = $1`, id, body.Role); err != nil {
+		writeMapped(w, err)
+		return
+	}
+	if err := writeAudit(ctx, tx, p.UserID, "role", "user", id, email, body.Role); err != nil {
 		writeMapped(w, err)
 		return
 	}
@@ -226,8 +235,8 @@ func (s *Server) setBlocked(w http.ResponseWriter, r *http.Request, block bool) 
 		return
 	}
 	defer tx.Rollback(ctx)
-	var role string
-	err = tx.QueryRow(ctx, `SELECT role FROM users WHERE id = $1 FOR UPDATE`, id).Scan(&role)
+	var role, email string
+	err = tx.QueryRow(ctx, `SELECT role, email FROM users WHERE id = $1 FOR UPDATE`, id).Scan(&role, &email)
 	if err == pgx.ErrNoRows {
 		writeMapped(w, errNotFound)
 		return
@@ -254,6 +263,14 @@ func (s *Server) setBlocked(w http.ResponseWriter, r *http.Request, block bool) 
 			return
 		}
 	}
+	action := "unblock"
+	if block {
+		action = "block"
+	}
+	if err := writeAudit(ctx, tx, p.UserID, action, "user", id, email, ""); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		writeMapped(w, err)
 		return
@@ -262,7 +279,8 @@ func (s *Server) setBlocked(w http.ResponseWriter, r *http.Request, block bool) 
 }
 
 func (s *Server) adminRevokeSessions(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	p, ok := s.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 	id := r.PathValue("id")
@@ -270,18 +288,34 @@ func (s *Server) adminRevokeSessions(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, errNotFound)
 		return
 	}
-	tag, err := s.db.Exec(r.Context(), `UPDATE session_families SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, id)
+	ctx := r.Context()
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		writeMapped(w, err)
 		return
 	}
-	var exists int
-	if err := s.db.QueryRow(r.Context(), `SELECT count(*) FROM users WHERE id = $1`, id).Scan(&exists); err != nil {
+	defer tx.Rollback(ctx)
+	var email string
+	err = tx.QueryRow(ctx, `SELECT email FROM users WHERE id = $1`, id).Scan(&email)
+	if err == pgx.ErrNoRows {
+		writeMapped(w, errNotFound)
+		return
+	}
+	if err != nil {
 		writeMapped(w, err)
 		return
 	}
-	if exists == 0 {
-		writeMapped(w, errNotFound)
+	tag, err := tx.Exec(ctx, `UPDATE session_families SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, id)
+	if err != nil {
+		writeMapped(w, err)
+		return
+	}
+	if err := writeAudit(ctx, tx, p.UserID, "sessions_revoke", "user", id, email, ""); err != nil {
+		writeMapped(w, err)
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		writeMapped(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "revoked": tag.RowsAffected()})
@@ -308,8 +342,8 @@ func (s *Server) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(ctx)
-	var role string
-	err = tx.QueryRow(ctx, `SELECT role FROM users WHERE id = $1 FOR UPDATE`, id).Scan(&role)
+	var role, email string
+	err = tx.QueryRow(ctx, `SELECT role, email FROM users WHERE id = $1 FOR UPDATE`, id).Scan(&role, &email)
 	if err == pgx.ErrNoRows {
 		writeMapped(w, errNotFound)
 		return
@@ -323,6 +357,10 @@ func (s *Server) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 			writeMapped(w, err)
 			return
 		}
+	}
+	if err := writeAudit(ctx, tx, p.UserID, "delete", "user", id, email, ""); err != nil {
+		writeMapped(w, err)
+		return
 	}
 	if err := deleteUserGraph(ctx, tx, id); err != nil {
 		writeMapped(w, err)

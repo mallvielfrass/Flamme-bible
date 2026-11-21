@@ -200,6 +200,12 @@ songbook_section_songs (section_id, songbook_id, fbid, position)
 
 `ADMIN_EMAIL` по-прежнему поднимает роль при регистрации и входе.
 
+## Журнал
+
+Таблица `admin_audit`: кто, когда, действие, вид и название цели, заметка. Строка пишется в той же транзакции, что и изменение: одобрение, отказ, снятие, скрытие и возврат, удаление, смена роли, блок, отзыв сессий, загрузка и публикация сборки, откат, удаление черновика, заметки к версии, исключение и возврат участника, смена роли в общине, отзыв приглашения, `publish/decision`.
+
+`GET /api/admin/audit?actor=&action=&target_kind=&limit=&offset=` — администратор и модератор. `actor` — id или часть почты. В строке есть `summary` по-русски. В карточке сборника и модуля поле `audit` — последние записи по этой цели.
+
 ## Релизы клиента
 
 Таблица `client_releases`: `version`, `status` (`dev` или `released`), хеши и размеры linux, windows и macos, `notes`, `created_at`, `published_at`. Активная версия — `app_settings.active_client_version`.
@@ -210,6 +216,8 @@ songbook_section_songs (section_id, songbook_id, fbid, position)
 
 - `POST /api/admin/releases` — `multipart/form-data`: `version`, файлы `linux_file`, `windows_file`, `macos_file` (хотя бы один), необязательные `notes` и `linux_sha256` / `windows_sha256` / `macos_sha256`. Хеш считает сервер. Если хеш передан и не совпал, запись не сохраняется. Повтор по версии `dev` обновляет только присланные файлы. Версия `released` не перезаписывается (`409`). Новый ряд — `201`, обновление — `200`.
 - `GET /api/admin/releases` — `active_version` и список.
+- `GET /api/admin/releases/{version}/download/{platform}` — файл черновика или опубликованной сборки, только администратор. Публичный `GET /api/releases/...` по-прежнему отдаёт только `released`.
+- `PATCH /api/admin/releases/{version}` — `{"notes":"..."}` для любой версии.
 - `POST /api/admin/releases/{version}/publish` — `dev` становится `released`, активная версия обновляется. Нужны непустые linux и windows. Повторный вызов для уже выпущенной версии снова делает её активной.
 - `DELETE /api/admin/releases/{version}` — только `dev`, вместе с каталогом файлов.
 

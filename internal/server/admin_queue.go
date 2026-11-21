@@ -311,6 +311,7 @@ func (s *Server) adminSongbookView(w http.ResponseWriter, r *http.Request) {
 		PatchCount     int           `json:"patch_count"`
 		Songs          []songPreview `json:"songs"`
 		Similar        []similarHit  `json:"similar"`
+		Audit          []auditEntry  `json:"audit"`
 	}
 	err := s.db.QueryRow(ctx, `
 		SELECT s.id::text, s.title, s.short_name, s.publisher, s.status, s.moderation_note, s.submitted_at,
@@ -354,6 +355,12 @@ func (s *Server) adminSongbookView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view.Similar = similar
+	audit, err := s.recentAudit(ctx, id)
+	if err != nil {
+		writeMapped(w, err)
+		return
+	}
+	view.Audit = audit
 	writeJSON(w, http.StatusOK, view)
 }
 
@@ -531,6 +538,11 @@ func (s *Server) adminModuleView(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
+	audit, err := s.recentAudit(ctx, id)
+	if err != nil {
+		writeMapped(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":              view.ID,
 		"title":           view.Title,
@@ -543,5 +555,6 @@ func (s *Server) adminModuleView(w http.ResponseWriter, r *http.Request) {
 		"books":           books,
 		"books_count":     len(books),
 		"verses_count":    verses,
+		"audit":           audit,
 	})
 }

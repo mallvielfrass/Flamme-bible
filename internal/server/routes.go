@@ -56,6 +56,7 @@ func (s *Server) mountMVP(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/catalog/modules", s.publicModules)
 	mux.HandleFunc("GET /api/admin/submissions", s.adminSubmissions)
 	mux.HandleFunc("GET /api/admin/summary", s.adminSummary)
+	mux.HandleFunc("GET /api/admin/audit", s.adminAudit)
 	mux.HandleFunc("GET /api/admin/users", s.adminUsers)
 	mux.HandleFunc("POST /api/admin/users/{id}/role", s.adminSetRole)
 	mux.HandleFunc("POST /api/admin/users/{id}/block", s.adminBlockUser)
@@ -76,6 +77,8 @@ func (s *Server) mountMVP(mux *http.ServeMux) {
 
 	mux.HandleFunc("POST /api/admin/releases", s.uploadRelease)
 	mux.HandleFunc("GET /api/admin/releases", s.listReleases)
+	mux.HandleFunc("PATCH /api/admin/releases/{version}", s.patchReleaseNotes)
+	mux.HandleFunc("GET /api/admin/releases/{version}/download/{platform}", s.adminDownloadRelease)
 	mux.HandleFunc("POST /api/admin/releases/{version}/publish", s.publishRelease)
 	mux.HandleFunc("DELETE /api/admin/releases/{version}", s.deleteRelease)
 	mux.HandleFunc("GET /api/releases/latest", s.latestRelease)

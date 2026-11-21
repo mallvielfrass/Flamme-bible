@@ -8,7 +8,8 @@ import (
 )
 
 func (s *Server) adminDeleteSongbook(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireModerator(w, r); !ok {
+	p, ok := s.requireModerator(w, r)
+	if !ok {
 		return
 	}
 	id := r.PathValue("id")
@@ -58,6 +59,10 @@ func (s *Server) adminDeleteSongbook(w http.ResponseWriter, r *http.Request) {
 			writeMapped(w, err)
 			return
 		}
+		if err := writeAudit(ctx, tx, p.UserID, "hide", "songbook", id, title, ""); err != nil {
+			writeMapped(w, err)
+			return
+		}
 		if err := tx.Commit(ctx); err != nil {
 			writeMapped(w, err)
 			return
@@ -69,6 +74,10 @@ func (s *Server) adminDeleteSongbook(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
+	if err := writeAudit(ctx, tx, p.UserID, "delete", "songbook", id, title, ""); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		writeMapped(w, err)
 		return
@@ -77,7 +86,8 @@ func (s *Server) adminDeleteSongbook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminUnhideSongbook(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireModerator(w, r); !ok {
+	p, ok := s.requireModerator(w, r)
+	if !ok {
 		return
 	}
 	id := r.PathValue("id")
@@ -108,6 +118,12 @@ func (s *Server) adminUnhideSongbook(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, errNotFound)
 		return
 	}
+	var title string
+	_ = tx.QueryRow(ctx, `SELECT title FROM songbooks WHERE id = $1`, id).Scan(&title)
+	if err := writeAudit(ctx, tx, p.UserID, "unhide", "songbook", id, title, ""); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		writeMapped(w, err)
 		return
@@ -116,7 +132,8 @@ func (s *Server) adminUnhideSongbook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminDeleteModule(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireModerator(w, r); !ok {
+	p, ok := s.requireModerator(w, r)
+	if !ok {
 		return
 	}
 	id := r.PathValue("id")
@@ -131,6 +148,16 @@ func (s *Server) adminDeleteModule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(ctx)
+	var title string
+	err = tx.QueryRow(ctx, `SELECT title FROM modules WHERE id = $1 FOR UPDATE`, id).Scan(&title)
+	if err == pgx.ErrNoRows {
+		writeMapped(w, errNotFound)
+		return
+	}
+	if err != nil {
+		writeMapped(w, err)
+		return
+	}
 	tag, err := tx.Exec(ctx, `DELETE FROM modules WHERE id = $1`, id)
 	if err != nil {
 		writeMapped(w, err)
@@ -138,6 +165,10 @@ func (s *Server) adminDeleteModule(w http.ResponseWriter, r *http.Request) {
 	}
 	if tag.RowsAffected() != 1 {
 		writeMapped(w, errNotFound)
+		return
+	}
+	if err := writeAudit(ctx, tx, p.UserID, "delete", "module", id, title, ""); err != nil {
+		writeMapped(w, err)
 		return
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -148,7 +179,8 @@ func (s *Server) adminDeleteModule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminDeleteCommunity(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	p, ok := s.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 	id := r.PathValue("id")
@@ -163,8 +195,8 @@ func (s *Server) adminDeleteCommunity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(ctx)
-	var kind string
-	err = tx.QueryRow(ctx, `SELECT kind FROM dimensions WHERE id = $1 FOR UPDATE`, id).Scan(&kind)
+	var kind, name string
+	err = tx.QueryRow(ctx, `SELECT kind, name FROM dimensions WHERE id = $1 FOR UPDATE`, id).Scan(&kind, &name)
 	if err == pgx.ErrNoRows {
 		writeMapped(w, errNotFound)
 		return
@@ -178,6 +210,10 @@ func (s *Server) adminDeleteCommunity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := eraseDimension(ctx, tx, id); err != nil {
+		writeMapped(w, err)
+		return
+	}
+	if err := writeAudit(ctx, tx, p.UserID, "delete", "community", id, name, ""); err != nil {
 		writeMapped(w, err)
 		return
 	}

@@ -197,6 +197,69 @@ func uploadReleaseFiles(t *testing.T, srv *httptest.Server, token, version strin
 	return res.StatusCode, raw
 }
 
+func TestDraftDownloadAndNotes(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("RELEASES_DIR", dir)
+	t.Setenv("ADMIN_EMAIL", "admin@example.com")
+	srv := newTestServer(t)
+	admin := registerUser(t, srv, "admin@example.com", "secret-pass", nil)
+	user := registerUser(t, srv, "user@example.com", "secret-pass", nil)
+	linux := []byte("draft-linux")
+	code, raw := uploadReleaseFiles(t, srv, admin.Token, "1.2.0", map[string][]byte{"linux_file": linux}, nil)
+	if code != http.StatusCreated {
+		t.Fatalf("черновик %d %s", code, raw)
+	}
+	status, _, _ := downloadRelease(t, srv, "/api/releases/1.2.0/download/linux")
+	if status != http.StatusNotFound {
+		t.Fatalf("публичное скачивание черновика %d", status)
+	}
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/admin/releases/1.2.0/download/linux", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+user.Token)
+	res, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("пользователь качает черновик %d", res.StatusCode)
+	}
+	req, err = http.NewRequest(http.MethodGet, srv.URL+"/api/admin/releases/1.2.0/download/linux", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+admin.Token)
+	res, err = srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK || !bytes.Equal(body, linux) || res.Header.Get("X-Content-SHA256") != shaHex(linux) {
+		t.Fatalf("черновик админу %d %s", res.StatusCode, body)
+	}
+	code, raw = api(t, srv, admin.Token, http.MethodPatch, "/api/admin/releases/1.2.0", map[string]any{"notes": "исправили шрифт"})
+	if code != http.StatusOK {
+		t.Fatalf("заметки %d %s", code, raw)
+	}
+	var patched struct {
+		Release clientRelease `json:"release"`
+	}
+	mustJSON(t, raw, &patched)
+	if patched.Release.Notes != "исправили шрифт" || patched.Release.Status != "dev" {
+		t.Fatalf("после правки %+v", patched.Release)
+	}
+	code, raw = api(t, srv, user.Token, http.MethodPatch, "/api/admin/releases/1.2.0", map[string]any{"notes": "нет"})
+	if code != http.StatusForbidden {
+		t.Fatalf("чужие заметки %d %s", code, raw)
+	}
+}
+
 func downloadRelease(t *testing.T, srv *httptest.Server, path string) (int, []byte, string) {
 	t.Helper()
 	res, err := srv.Client().Get(srv.URL + path)
