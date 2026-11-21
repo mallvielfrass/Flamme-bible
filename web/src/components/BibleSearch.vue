@@ -4,6 +4,7 @@ import { api, explain } from '../api'
 
 const props = defineProps({
   token: { type: String, default: '' },
+  pickLabel: { type: String, default: 'Добавить в план' },
 })
 const emit = defineEmits(['pick'])
 
@@ -62,7 +63,7 @@ async function search() {
       <strong class="title-serif">{{ hit.reference || 'Место' }}</strong>
       <p class="hint">{{ hit.module_title || hit.module_short_name }}</p>
       <p v-if="hit.text" class="quote">{{ hit.text }}</p>
-      <button class="btn slim" type="button" @click="emit('pick', hit)">Добавить в план</button>
+      <button class="btn slim" type="button" @click="emit('pick', hit)">{{ pickLabel }}</button>
     </li>
   </ul>
 </template>
