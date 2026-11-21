@@ -20,12 +20,6 @@ function on(name) {
   return false
 }
 
-function onSpace(event) {
-  const id = event.target.value
-  session.select(id)
-  if (route.path.startsWith('/dimensions/')) router.push(`/dimensions/${id}`)
-}
-
 async function logout() {
   await session.logout()
   router.push('/catalog')
@@ -42,14 +36,6 @@ async function logout() {
       <router-link class="nav-link" :class="{ 'router-link-active': on('download') }" to="/download">Скачать клиент</router-link>
       <router-link v-if="session.role === 'admin'" class="nav-link" :class="{ 'router-link-active': on('admin') }" to="/admin">Админ-панель</router-link>
       <div class="nav-end">
-        <label v-if="session.token && session.spaces.length" class="space-switch">
-          Сейчас
-          <select :value="session.currentId" aria-label="Текущее пространство" @change="onSpace">
-            <option v-for="space in session.spaces" :key="space.id" :value="space.id">
-              {{ space.kind === 'personal' ? 'Личное' : space.name }}
-            </option>
-          </select>
-        </label>
         <span v-if="session.email" class="who">{{ session.email }}</span>
         <button v-if="session.token" class="logout" type="button" @click="logout">Выход</button>
         <template v-else>

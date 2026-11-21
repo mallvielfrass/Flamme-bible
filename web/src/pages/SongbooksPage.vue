@@ -6,10 +6,32 @@ import SongSearch from '../components/SongSearch.vue'
 import SongbookManager from '../components/SongbookManager.vue'
 import ModuleManager from '../components/ModuleManager.vue'
 import PublicCatalog from '../components/PublicCatalog.vue'
+import SpaceFilter from '../components/SpaceFilter.vue'
 
 const route = useRoute()
 const session = useSessionStore()
 const tab = ref(route.meta.catalog ? 'catalog' : 'search')
+const wantCommunity = ref(false)
+
+const communities = computed(() => session.spaces.filter((space) => space.kind === 'community'))
+const bookSpace = computed(() => {
+  if (wantCommunity.value && !communities.value.length) return 'community'
+  return session.current?.kind === 'community' ? session.currentId : 'personal'
+})
+
+function onBookSpace(value) {
+  if (value === 'community') {
+    wantCommunity.value = true
+    return
+  }
+  wantCommunity.value = false
+  if (value === 'personal') {
+    const personal = session.spaces.find((space) => space.kind === 'personal')
+    if (personal) session.select(personal.id)
+    return
+  }
+  session.select(value)
+}
 
 const tabs = computed(() => {
   const all = [
@@ -29,6 +51,19 @@ watch(() => route.fullPath, () => {
 
 <template>
   <h1>Сборники и поиск</h1>
+  <SpaceFilter
+    v-if="session.token"
+    :model-value="bookSpace"
+    :communities="communities"
+    :allow-all="false"
+    :allow-all-communities="false"
+    :preferred="session.communityId"
+    @update:model-value="onBookSpace"
+  />
+  <div v-if="bookSpace === 'community'" class="empty-state">
+    <p>Вы пока не состоите в общине.</p>
+    <router-link to="/communities">Создать или вступить в общину</router-link>
+  </div>
   <div class="tabs" role="tablist">
     <button
       v-for="item in tabs"
@@ -42,7 +77,7 @@ watch(() => route.fullPath, () => {
     >{{ item.label }}</button>
   </div>
   <SongSearch v-if="tab === 'search'" :token="session.token" />
-  <SongbookManager v-else-if="tab === 'books'" :dimension-id="session.currentId" />
-  <ModuleManager v-else-if="tab === 'modules'" :dimension-id="session.currentId" />
-  <PublicCatalog v-else :guest="!session.token" @switch="tab = $event" />
+  <SongbookManager v-else-if="tab === 'books' && bookSpace !== 'community'" :dimension-id="session.currentId" />
+  <ModuleManager v-else-if="tab === 'modules' && bookSpace !== 'community'" :dimension-id="session.currentId" />
+  <PublicCatalog v-else-if="tab === 'catalog'" :guest="!session.token" @switch="tab = $event" />
 </template>

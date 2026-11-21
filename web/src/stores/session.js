@@ -38,6 +38,7 @@ export const useSessionStore = defineStore('session', () => {
   const deviceIdValue = ref(saved?.deviceId || '')
   const dimensionId = ref(saved?.dimensionId || '')
   const currentId = ref(saved?.currentId || saved?.dimensionId || '')
+  const communityId = ref(saved?.communityId || '')
   const spaces = ref(Array.isArray(saved?.spaces) ? saved.spaces : [])
 
   const current = computed(() => spaces.value.find((space) => space.id === currentId.value) || null)
@@ -51,28 +52,41 @@ export const useSessionStore = defineStore('session', () => {
       deviceId: deviceIdValue.value,
       dimensionId: dimensionId.value,
       currentId: currentId.value,
+      communityId: communityId.value,
       spaces: spaces.value,
     }))
   }
 
   function ensureCurrent() {
-    if (spaces.value.some((space) => space.id === currentId.value)) return
-    const personal = spaces.value.find((space) => space.kind === 'personal')
-    currentId.value = personal?.id || spaces.value[0]?.id || dimensionId.value || ''
+    if (!spaces.value.some((space) => space.id === currentId.value)) {
+      const personal = spaces.value.find((space) => space.kind === 'personal')
+      currentId.value = personal?.id || spaces.value[0]?.id || dimensionId.value || ''
+    }
+    const chosen = spaces.value.find((space) => space.id === communityId.value && space.kind === 'community')
+    if (chosen) return
+    const current = spaces.value.find((space) => space.id === currentId.value)
+    communityId.value = current?.kind === 'community'
+      ? current.id
+      : (spaces.value.find((space) => space.kind === 'community')?.id || '')
   }
 
-  function remember(view) {
+  function remember(view, options = {}) {
     const item = toSpace(view)
     const index = spaces.value.findIndex((space) => space.id === item.id)
     if (index >= 0) spaces.value[index] = { ...spaces.value[index], ...item }
     else spaces.value.push(item)
-    currentId.value = item.id
+    if (options.select !== false) {
+      currentId.value = item.id
+      if (item.kind === 'community') communityId.value = item.id
+    }
     persist()
   }
 
   function select(id) {
     if (!spaces.value.some((space) => space.id === id)) return
     currentId.value = id
+    const space = spaces.value.find((item) => item.id === id)
+    if (space?.kind === 'community') communityId.value = id
     persist()
   }
 
@@ -151,6 +165,7 @@ export const useSessionStore = defineStore('session', () => {
     role.value = ''
     dimensionId.value = ''
     currentId.value = ''
+    communityId.value = ''
     spaces.value = []
     sessionStorage.removeItem(sessionKey)
   }
@@ -166,7 +181,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   return {
-    token, userId, email, role, deviceId: deviceIdValue, dimensionId, currentId, spaces, current,
+    token, userId, email, role, deviceId: deviceIdValue, dimensionId, currentId, communityId, spaces, current,
     remember, select, register, login, logout, bootstrap, acceptInvite,
   }
 })

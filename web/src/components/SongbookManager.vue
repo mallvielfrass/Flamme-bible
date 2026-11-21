@@ -145,7 +145,7 @@ watch(() => props.dimensionId, load, { immediate: true })
 <template>
   <p v-if="error" class="banner bad" role="alert">{{ error }}</p>
   <p v-if="notice" class="banner ok" role="status">{{ notice }}</p>
-  <p v-if="!dimensionId" class="empty-state">Выберите пространство вверху страницы.</p>
+  <p v-if="!dimensionId" class="empty-state">Выберите личное пространство или общину.</p>
   <p v-else-if="loading" class="empty" role="status">Загрузка…</p>
   <div v-else-if="!books.length" class="empty-state">
     <p>В этом пространстве пока нет сборников.</p>

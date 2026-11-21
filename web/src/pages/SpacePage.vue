@@ -22,7 +22,7 @@ const confession = ref('')
 const description = ref('')
 const code = ref('')
 
-const spaceId = computed(() => route.params.id || session.currentId)
+const spaceId = computed(() => route.params.id || session.communityId || '')
 
 async function load() {
   error.value = ''
@@ -35,7 +35,7 @@ async function load() {
   try {
     const view = await api(`/api/dimensions/${spaceId.value}`, { token: session.token })
     space.value = view
-    session.remember(view)
+    session.remember(view, { select: Boolean(route.params.id) })
   } catch (err) {
     space.value = null
     error.value = explain(err)
@@ -121,8 +121,8 @@ watch(() => route.path, (path) => {
   <section v-if="tab === 'now'">
     <p v-if="loading" class="empty" role="status">Загрузка…</p>
     <div v-else-if="!space" class="empty-state">
-      <p>Пространство не выбрано.</p>
-      <button class="btn slim primary" type="button" @click="tab = 'new'">Создать общину</button>
+      <p>Вы пока не состоите в общине.</p>
+      <router-link to="/communities" @click="tab = 'new'">Создать или вступить в общину</router-link>
     </div>
     <div v-else class="stack">
       <section class="card" :data-kind="space.kind">
