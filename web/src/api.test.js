@@ -52,6 +52,31 @@ describe('api', () => {
     expect(headers['Content-Type']).toBeUndefined()
   })
 
+  it('reports upload progress through xhr', async () => {
+    let seen
+    class FakeXHR {
+      upload = { onprogress: null }
+      status = 201
+      responseText = '{"release":{"version":"1.0.0"}}'
+      open(method, path) { seen = { method, path } }
+      setRequestHeader(name, value) { seen.header = { name, value } }
+      send() {
+        this.upload.onprogress({ lengthComputable: true, loaded: 1, total: 2 })
+        this.onload()
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeXHR)
+    const steps = []
+    const data = await apiForm('/api/admin/releases', {
+      form: new FormData(),
+      token: 't',
+      onProgress: (loaded, total) => steps.push([loaded, total]),
+    })
+    expect(data.release.version).toBe('1.0.0')
+    expect(seen.header).toEqual({ name: 'Authorization', value: 'Bearer t' })
+    expect(steps).toEqual([[1, 2]])
+  })
+
   it('reports a lost connection', async () => {
     vi.stubGlobal('fetch', async () => {
       throw new TypeError('network')
