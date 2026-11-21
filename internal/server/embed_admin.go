@@ -6,21 +6,22 @@ import (
 )
 
 type embedQueueStats struct {
-	Settings              embedSettings `json:"settings"`
-	MeasuredTokensPerSec  float64       `json:"measured_tokens_per_sec"`
-	EffectiveTokensPerSec float64       `json:"effective_tokens_per_sec"`
-	ModelState            string        `json:"model_state"`
-	ActiveModel           string        `json:"active_model"`
-	ActiveDim             int           `json:"active_dim"`
-	LiveModel             string        `json:"live_model"`
-	LiveDim               int           `json:"live_dim"`
-	Pending               int           `json:"pending"`
-	Processing            int           `json:"processing"`
-	Failed                int           `json:"failed"`
-	PendingTokens         int           `json:"pending_tokens"`
-	ETASeconds            int           `json:"eta_seconds"`
-	Songbooks             []bookQueue   `json:"songbooks"`
-	FailedJobs            []failedJob   `json:"failed_jobs"`
+	Settings              embedSettings  `json:"settings"`
+	MeasuredTokensPerSec  float64        `json:"measured_tokens_per_sec"`
+	EffectiveTokensPerSec float64        `json:"effective_tokens_per_sec"`
+	ModelState            string         `json:"model_state"`
+	ActiveModel           string         `json:"active_model"`
+	ActiveDim             int            `json:"active_dim"`
+	LiveModel             string         `json:"live_model"`
+	LiveDim               int            `json:"live_dim"`
+	Pending               int            `json:"pending"`
+	Processing            int            `json:"processing"`
+	Failed                int            `json:"failed"`
+	PendingTokens         int            `json:"pending_tokens"`
+	ETASeconds            int            `json:"eta_seconds"`
+	Songbooks             []bookQueue    `json:"songbooks"`
+	FailedJobs            []failedJob    `json:"failed_jobs"`
+	Model                 embedModelCard `json:"model"`
 }
 
 type bookQueue struct {
@@ -193,6 +194,7 @@ func (s *Server) embedStats(ctx context.Context) (embedQueueStats, error) {
 		ETASeconds:            eta,
 		Songbooks:             books,
 		FailedJobs:            failedJobs,
+		Model:                 s.modelCard(ctx, live, measured),
 	}, nil
 }
 

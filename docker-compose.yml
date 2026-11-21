@@ -30,9 +30,12 @@ services:
       # Пусто — смысловой поиск выключен. Включение: EMBED_URL и профиль semantic.
       EMBED_URL: ${EMBED_URL:-}
       EMBED_MODEL: ${EMBED_MODEL:-cointegrated/rubert-tiny2}
+      EMBED_MODELS_DIR: /data/embed-models
+      GGUF_MAX_BYTES: ${GGUF_MAX_BYTES:-536870912}
     volumes:
       - media:/data/media
       - releases:/data/releases
+      - embedmodels:/data/embed-models
     depends_on:
       db:
         condition: service_healthy
@@ -79,6 +82,24 @@ services:
       - embedcache:/data
     restart: unless-stopped
 
+  # Не вместе с профилем semantic: на машине 2 ядра / 4 ГБ обе модели не влезают.
+  llama:
+    profiles: ["llama"]
+    image: ghcr.io/ggml-org/llama.cpp:server
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --embedding
+      - -m
+      - /models/${LLAMA_GGUF:-model.gguf}
+    cpus: ${LLAMA_CPUS:-1}
+    mem_limit: ${LLAMA_MEMORY:-1536m}
+    volumes:
+      - embedmodels:/models
+    restart: unless-stopped
+
   web:
     build:
       context: ./web
@@ -94,3 +115,4 @@ volumes:
   media:
   releases:
   embedcache:
+  embedmodels:
