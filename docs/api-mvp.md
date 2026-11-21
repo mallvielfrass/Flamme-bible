@@ -2,7 +2,7 @@
 
 Новые маршруты лежат рядом с уже существующими `/register`, `/login`, `/dimensions` и `/songbooks`. Префикс `/api` у новых путей. Сессия та же: `Authorization: Bearer <token>`.
 
-Роль пользователя — `user` или `admin`. Поле `role` из тела регистрации не читается. Администратором становится адрес из `ADMIN_EMAIL` (сравнение без учёта регистра) в момент регистрации и повторно при входе. Пароль в окружении не задаётся.
+Роль пользователя — `user`, `moderator` или `admin`. Поле `role` из тела регистрации не читается. Администратором становится адрес из `ADMIN_EMAIL` (сравнение без учёта регистра) в момент регистрации и повторно при входе. Пароль в окружении не задаётся. Модератора назначает только администратор сайта. Модератор открывает `/admin`, очередь сборников и журнал. Релизы, пользователей, роли и общины он не меняет.
 
 Личный план принадлежит пользователю (`owner_user_id`). План общины принадлежит пространству `community` (`dimension_id`), участник должен состоять в нём. Сборники по-прежнему живут в пространстве: личное пространство создаётся при регистрации, община — отдельной записью.
 
@@ -157,7 +157,7 @@ songbook_section_songs (section_id, songbook_id, fbid, position)
 
 `submitted_at` ставится, когда сборник или модуль уходит на проверку. Для уже лежавших в очереди строк берётся дата решения, а если её нет — время миграции.
 
-Только `role=admin` (модератор описан ниже, когда роль появляется):
+`role=admin` или `role=moderator`:
 
 - `GET /api/admin/submissions?status=pending|draft|approved|rejected|hidden|all&kind=songbook|module&q=&sort=submitted&limit=&offset=`
   Ответ: `submissions`, `total`, `counts`. В строке есть `community_name`, `author_email`, `short_name`, `songs_count` или `books_count`, `submitted_at`, у сборника ещё `publisher` и `patch_count`. По умолчанию статус `pending`, порядок — сначала давно отправленные. `q` ищет по названию, короткому имени и почте автора. `limit` по умолчанию 50, максимум 200.
@@ -170,6 +170,20 @@ songbook_section_songs (section_id, songbook_id, fbid, position)
 - те же три пути для `/api/admin/modules/{id}/...`
 
 Решение администратора пространства `POST /songbooks/{id}/publish/decision` пока остаётся у администратора общины: `public: true` ставит `approved`, `public: false` ставит `rejected`.
+
+## Пользователи
+
+Только `role=admin`.
+
+`users.created_at`, `users.blocked_at`, `users.last_seen_at`. Блокировка запрещает вход и обновление сессии и сразу отзывает семьи сессий. Материалы пользователя остаются.
+
+- `GET /api/admin/users?q=&role=user|moderator|admin&blocked=0|1&limit=&offset=` — `users`, `total`, `counts`.
+- `POST /api/admin/users/{id}/role` — `{"role":"user|moderator|admin"}`. Нельзя снять с себя права администратора. В системе остаётся хотя бы один администратор. Иначе `409`.
+- `POST /api/admin/users/{id}/block` и `/unblock`. Администратора и себя блокировать нельзя (`409`).
+- `POST /api/admin/users/{id}/sessions/revoke` — `session_families.revoked_at = now()`.
+- `DELETE /api/admin/users/{id}` — не себя и не последнего администратора. Личное пространство удаляется вместе со сборниками, планами и модулями. Членство в чужих общинах снимается, общины и их материалы остаются.
+
+`ADMIN_EMAIL` по-прежнему поднимает роль при регистрации и входе.
 
 ## Релизы клиента
 

@@ -209,8 +209,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	var userID, hash string
-	err := s.db.QueryRow(ctx, `SELECT id::text, password_hash FROM users WHERE email = $1`, normalizeEmail(body.Email)).Scan(&userID, &hash)
-	if err != nil || !checkPassword(hash, body.Password) {
+	var blocked *time.Time
+	err := s.db.QueryRow(ctx, `SELECT id::text, password_hash, blocked_at FROM users WHERE email = $1`, normalizeEmail(body.Email)).Scan(&userID, &hash, &blocked)
+	if err != nil || !checkPassword(hash, body.Password) || blocked != nil {
 		writeJSON(w, http.StatusUnauthorized, errJSON("не авторизован"))
 		return
 	}
@@ -245,6 +246,10 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
+	if _, err := tx.Exec(ctx, `UPDATE users SET last_seen_at = now() WHERE id = $1`, userID); err != nil {
+		writeMapped(w, err)
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		writeMapped(w, err)
 		return
@@ -271,16 +276,18 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(ctx)
-	var familyID string
-	var replaced, revoked *time.Time
+	var familyID, userID string
+	var replaced, revoked, blocked *time.Time
 	var expired bool
 	err = tx.QueryRow(ctx, `
-		SELECT f.id::text, t.replaced_at, f.revoked_at, (t.expires_at IS NULL OR t.expires_at <= now())
+		SELECT f.id::text, f.user_id::text, t.replaced_at, f.revoked_at,
+		       (t.expires_at IS NULL OR t.expires_at <= now()), u.blocked_at
 		FROM session_tokens t
 		JOIN session_families f ON f.id = t.family_id
+		JOIN users u ON u.id = f.user_id
 		WHERE t.digest = $1
 		FOR UPDATE OF t, f
-	`, tokenDigest(token)).Scan(&familyID, &replaced, &revoked, &expired)
+	`, tokenDigest(token)).Scan(&familyID, &userID, &replaced, &revoked, &expired, &blocked)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && revoked != nil) {
 		writeJSON(w, http.StatusUnauthorized, errJSON("не авторизован"))
 		return
@@ -301,8 +308,12 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, errJSON("не авторизован"))
 		return
 	}
-	if expired {
+	if expired || blocked != nil {
 		writeJSON(w, http.StatusUnauthorized, errJSON("не авторизован"))
+		return
+	}
+	if _, err := tx.Exec(ctx, `UPDATE users SET last_seen_at = now() WHERE id = $1`, userID); err != nil {
+		writeMapped(w, err)
 		return
 	}
 	next, err := newSecret()
@@ -349,22 +360,23 @@ func (s *Server) principal(r *http.Request) (principal, error) {
 		return principal{}, errUnauthorized
 	}
 	var p principal
-	var replaced, revoked *time.Time
+	var replaced, revoked, blocked *time.Time
 	var expired bool
 	err := s.db.QueryRow(r.Context(), `
 		SELECT f.id::text, f.user_id::text, f.device_id::text, t.replaced_at, f.revoked_at,
-		       (t.expires_at IS NULL OR t.expires_at <= now())
+		       (t.expires_at IS NULL OR t.expires_at <= now()), u.blocked_at
 		FROM session_tokens t
 		JOIN session_families f ON f.id = t.family_id
+		JOIN users u ON u.id = f.user_id
 		WHERE t.digest = $1
-	`, tokenDigest(token)).Scan(&p.FamilyID, &p.UserID, &p.DeviceID, &replaced, &revoked, &expired)
+	`, tokenDigest(token)).Scan(&p.FamilyID, &p.UserID, &p.DeviceID, &replaced, &revoked, &expired, &blocked)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return principal{}, errUnauthorized
 	}
 	if err != nil {
 		return principal{}, err
 	}
-	if replaced != nil || revoked != nil || expired {
+	if replaced != nil || revoked != nil || expired || blocked != nil {
 		return principal{}, errUnauthorized
 	}
 	return p, nil
