@@ -14,6 +14,7 @@ function on(name) {
   const path = route.path
   if (name === 'songs') return path === '/songbooks' || path === '/catalog'
   if (name === 'plans') return path === '/plans'
+  if (name === 'ai') return path === '/ai'
   if (name === 'spaces') return path === '/communities' || path.startsWith('/dimensions/')
   if (name === 'download') return path === '/download'
   if (name === 'admin') return path === '/admin'
@@ -33,10 +34,10 @@ async function logout() {
       <router-link class="nav-link" :class="{ 'router-link-active': on('songs') }" :to="songsTo">Сборники и поиск</router-link>
       <router-link v-if="session.token" class="nav-link" :class="{ 'router-link-active': on('plans') }" to="/plans">Планы</router-link>
       <router-link v-if="session.token" class="nav-link" :class="{ 'router-link-active': on('spaces') }" to="/communities">Общины</router-link>
+      <router-link v-if="session.token" class="nav-link" :class="{ 'router-link-active': on('ai') }" to="/ai">AI Чат</router-link>
       <router-link class="nav-link" :class="{ 'router-link-active': on('download') }" to="/download">Скачать клиент</router-link>
       <router-link v-if="session.role === 'admin'" class="nav-link" :class="{ 'router-link-active': on('admin') }" to="/admin">Админ-панель</router-link>
       <div class="nav-end">
-        <span v-if="session.email" class="who">{{ session.email }}</span>
         <button v-if="session.token" class="logout" type="button" @click="logout">Выход</button>
         <template v-else>
           <router-link class="btn slim" to="/login">Войти</router-link>
