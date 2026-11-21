@@ -21,6 +21,9 @@ const notice = ref('')
 const loading = ref(false)
 const busy = ref(false)
 const hideId = ref('')
+const sections = ref({})
+const bookSongs = ref({})
+const sectionDraft = ref({})
 
 async function load() {
   error.value = ''
@@ -139,13 +142,112 @@ async function hide(book) {
   }
 }
 
+async function loadSections(book) {
+  const [list, snap] = await Promise.all([
+    api(`/api/songbooks/${book.id}/sections`, { token: session.token }),
+    api(`/dimensions/${props.dimensionId}/songbooks/${book.id}/snapshot`, { token: session.token }),
+  ])
+  sections.value = { ...sections.value, [book.id]: Array.isArray(list) ? list : [] }
+  bookSongs.value = {
+    ...bookSongs.value,
+    [book.id]: (snap.songs || []).filter((song) => !song.deleted),
+  }
+}
+
+async function onSections(event, book) {
+  if (!event.target.open) return
+  error.value = ''
+  try {
+    await loadSections(book)
+  } catch (err) {
+    error.value = explain(err)
+  }
+}
+
+async function createSection(book) {
+  const title = (sectionDraft.value[book.id] || '').trim()
+  if (!title) {
+    error.value = 'Введите название раздела.'
+    return
+  }
+  error.value = ''
+  busy.value = true
+  try {
+    await api(`/api/songbooks/${book.id}/sections`, {
+      method: 'POST',
+      token: session.token,
+      body: { title },
+    })
+    sectionDraft.value = { ...sectionDraft.value, [book.id]: '' }
+    await loadSections(book)
+  } catch (err) {
+    error.value = explain(err)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function renameSection(book, section) {
+  const title = section.title.trim()
+  if (!title) return
+  error.value = ''
+  try {
+    await api(`/api/songbooks/${book.id}/sections/${section.id}`, {
+      method: 'PUT',
+      token: session.token,
+      body: { title },
+    })
+  } catch (err) {
+    error.value = explain(err)
+    await loadSections(book)
+  }
+}
+
+async function removeSection(book, section) {
+  error.value = ''
+  busy.value = true
+  try {
+    await api(`/api/songbooks/${book.id}/sections/${section.id}`, {
+      method: 'DELETE',
+      token: session.token,
+    })
+    await loadSections(book)
+  } catch (err) {
+    error.value = explain(err)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function toggleSong(book, section, fbid, checked) {
+  const current = Array.isArray(section.songs) ? section.songs : []
+  const next = current.filter((id) => id !== fbid)
+  if (checked) next.push(fbid)
+  error.value = ''
+  busy.value = true
+  try {
+    const saved = await api(`/api/sections/${section.id}/songs`, {
+      method: 'PUT',
+      token: session.token,
+      body: { fbids: next },
+    })
+    section.songs = saved.songs || []
+    section.count = saved.count || section.songs.length
+  } catch (err) {
+    error.value = explain(err)
+    await loadSections(book)
+  } finally {
+    busy.value = false
+  }
+}
+
 watch(() => props.dimensionId, load, { immediate: true })
 </script>
 
 <template>
   <p v-if="error" class="banner bad" role="alert">{{ error }}</p>
   <p v-if="notice" class="banner ok" role="status">{{ notice }}</p>
-  <p v-if="!dimensionId" class="empty-state">Выберите пространство вверху страницы.</p>
+  <p v-if="!dimensionId" class="empty-state">Выберите личное пространство или общину.</p>
   <p v-else-if="loading" class="empty" role="status">Загрузка…</p>
   <div v-else-if="!books.length" class="empty-state">
     <p>В этом пространстве пока нет сборников.</p>
@@ -165,6 +267,33 @@ watch(() => props.dimensionId, load, { immediate: true })
           {{ hideId === book.id ? 'Подтвердить скрытие' : 'Скрыть' }}
         </button>
       </div>
+      <details @toggle="onSections($event, book)">
+        <summary>Разделы</summary>
+        <ul class="plain">
+          <li v-for="section in sections[book.id] || []" :key="section.id">
+            <label>Название
+              <input v-model="section.title" @change="renameSection(book, section)" />
+            </label>
+            <p v-if="!(bookSongs[book.id] || []).length" class="hint">В сборнике пока нет песен. Их добавит программа на компьютере.</p>
+            <label v-for="song in bookSongs[book.id] || []" :key="song.fbid" class="check-line">
+              <input
+                type="checkbox"
+                :checked="(section.songs || []).includes(song.fbid)"
+                :disabled="busy"
+                @change="toggleSong(book, section, song.fbid, $event.target.checked)"
+              />
+              {{ song.title || 'Без названия' }}
+            </label>
+            <button class="btn slim danger" type="button" :disabled="busy" @click="removeSection(book, section)">Удалить раздел</button>
+          </li>
+        </ul>
+        <form @submit.prevent="createSection(book)">
+          <label>Новый раздел
+            <input v-model="sectionDraft[book.id]" name="section_title" />
+          </label>
+          <button class="btn slim" type="submit" :disabled="busy">Добавить раздел</button>
+        </form>
+      </details>
     </li>
   </ul>
 

@@ -32,7 +32,10 @@ func Migrate(ctx context.Context, db *pgxpool.Pool) error {
 	if err := migrateMVP(ctx, db); err != nil {
 		return err
 	}
-	return migrateSemantic(ctx, db)
+	if err := migrateSemantic(ctx, db); err != nil {
+		return err
+	}
+	return migratePlansUI(ctx, db)
 }
 
 func checkPostgres(ctx context.Context, db *pgxpool.Pool) error {

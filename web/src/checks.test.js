@@ -5,6 +5,7 @@ import {
   clipPlanText,
   decodePlanText,
   importEncodingNotice,
+  readPlanFile,
   inviteToken,
   moduleNameOk,
   releaseVersionOk,
@@ -67,5 +68,7 @@ describe('checks', () => {
     expect(decodePlanText(new TextEncoder().encode('План'))).toBe('План')
     expect(decodePlanText(new Uint8Array([0xef, 0xbb, 0xbf, 0x41]))).toBe('A')
     expect(decodePlanText(new Uint8Array([0xc0]))).toBe('А')
+    expect(readPlanFile(new Uint8Array([0xc0]), 'auto')).toEqual({ text: 'А', encoding: 'windows-1251' })
+    expect(readPlanFile(new TextEncoder().encode('План'), 'utf-8').encoding).toBe('utf-8')
   })
 })

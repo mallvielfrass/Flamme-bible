@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  appendItems,
   bibleItem,
   bibleItemFromPassage,
+  cloneItems,
   exportFileName,
+  filterByKinds,
   importFormatFromName,
+  itemStamp,
   moveItem,
+  planUpdatedLabel,
   songItem,
   textItem,
 } from './planItems'
@@ -71,5 +76,44 @@ describe('plan items', () => {
     expect(exportFileName('history')).toBe('History.ini')
     expect(exportFileName('plandef')).toBe('PlanDef.ini')
     expect(exportFileName('json')).toBe('plan.json')
+  })
+
+  it('filters, copies and appends items without touching the source', () => {
+    const source = [
+      { id: 's', kind: 'song', song_id: 'a', title: 'А' },
+      { id: 'b', kind: 'bible', reference: 'Ин. 1:1' },
+      { id: 't', kind: 'text', caption: 'Заметка' },
+    ]
+    expect(filterByKinds(source, ['song', 'text']).map((item) => item.id)).toEqual(['s', 't'])
+    const copy = cloneItems(source)
+    expect(copy).toHaveLength(3)
+    expect(copy[0].id).not.toBe('s')
+    expect(copy[0].title).toBe('А')
+    expect(source[0].id).toBe('s')
+    const target = [{ id: 'have', kind: 'song', song_id: 'a', title: 'А' }]
+    const next = appendItems(target, source, { kinds: ['song', 'bible', 'text'] })
+    expect(next.map((item) => item.kind)).toEqual(['song', 'bible', 'text'])
+    expect(next[0].id).toBe('have')
+    expect(next[1].kind).toBe('bible')
+    expect(next[1].id).not.toBe('b')
+    expect(source[1].id).toBe('b')
+    const kept = appendItems(target, source, { kinds: ['song'], skipSongs: false })
+    expect(kept).toHaveLength(2)
+    expect(kept[1].song_id).toBe('a')
+  })
+
+  it('formats plan and item times in the local zone', () => {
+    const now = new Date(2026, 10, 21, 12, 0, 0)
+    const created = new Date(2026, 10, 18, 19, 2, 0)
+    const updated = new Date(2026, 10, 20, 21, 40, 0)
+    const older = new Date(2025, 10, 18, 19, 2, 0)
+    expect(planUpdatedLabel(updated.toISOString(), now)).toBe('изменён 20.11, 21:40')
+    expect(itemStamp({ created_at: created.toISOString() }, now)).toEqual({
+      text: 'создан 18.11, 19:02',
+      title: '18.11.2026, 19:02',
+    })
+    expect(itemStamp({ created_at: created.toISOString(), updated_at: updated.toISOString() }, now).text).toBe('изменён 20.11, 21:40')
+    expect(itemStamp({ created_at: older.toISOString() }, now).text).toBe('создан 18.11.2025, 19:02')
+    expect(itemStamp({}, now).text).toBe('не сохранён')
   })
 })

@@ -4,16 +4,18 @@ function id() {
   return crypto.randomUUID()
 }
 
-export function songItem(hit) {
-  const title = (hit?.title || '').trim()
-  const songId = (hit?.fbid || '').trim()
+export function songItem(hit, titleOverride) {
+  const title = (titleOverride != null ? titleOverride : hit?.title || '').trim()
+  const songId = (hit?.fbid || hit?.song_id || '').trim()
   if (!songId && !title) throw new Error('У песни нет названия.')
   return {
     id: id(),
     kind: 'song',
     song_id: songId,
-    songbook_id: hit.songbook_id || '',
+    songbook_id: hit?.songbook_id || '',
     title: title || 'Песня',
+    songbook_title: hit?.songbook_title || '',
+    section_title: hit?.section_title || '',
   }
 }
 
@@ -110,4 +112,102 @@ export function itemKindLabel(kind) {
   if (kind === 'song') return 'Песня'
   if (kind === 'bible') return 'Стих'
   return 'Заметка'
+}
+
+export const maxPlanItems = 500
+
+export function filterByKinds(items, kinds) {
+  const allow = new Set(kinds || [])
+  return (items || []).filter((item) => allow.has(item.kind))
+}
+
+export function cloneItems(items) {
+  return (items || []).map((item) => {
+    const copy = { ...item, id: id() }
+    delete copy.position
+    delete copy.created_at
+    delete copy.updated_at
+    return copy
+  })
+}
+
+function songIdentity(item) {
+  const songId = String(item?.song_id || '').trim()
+  if (songId) return `id:${songId}`
+  return `title:${String(item?.title || '').trim().toLowerCase()}`
+}
+
+// Песни, которые уже есть, пропускаются, если skipSongs не выключен.
+// Новые пункты получают новые id и встают в конец в исходном порядке.
+export function appendItems(items, extra, options = {}) {
+  const skipSongs = options.skipSongs !== false
+  const have = new Set((items || []).filter((item) => item.kind === 'song').map(songIdentity))
+  const picked = []
+  for (const item of filterByKinds(extra, options.kinds)) {
+    if (skipSongs && item.kind === 'song') {
+      const key = songIdentity(item)
+      if (have.has(key)) continue
+      have.add(key)
+    }
+    picked.push(item)
+  }
+  return (items || []).concat(cloneItems(picked))
+}
+
+export function countByKind(items) {
+  const counts = { song: 0, bible: 0, text: 0 }
+  for (const item of items || []) {
+    if (Object.hasOwn(counts, item.kind)) counts[item.kind] += 1
+  }
+  return counts
+}
+
+export function pointsLabel(count) {
+  const value = count || 0
+  const mod10 = value % 10
+  const mod100 = value % 100
+  if (mod10 === 1 && mod100 !== 11) return `${value} пункт`
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${value} пункта`
+  return `${value} пунктов`
+}
+
+export function planFormatLabel(format) {
+  if (format === 'vplt') return 'plan.vplt'
+  if (format === 'history') return 'History.ini'
+  if (format === 'plandef') return 'PlanDef.ini'
+  if (format === 'json') return 'JSON'
+  return 'файл'
+}
+
+export function planEncodingLabel(encoding) {
+  return encoding === 'windows-1251' ? 'Windows-1251' : 'UTF-8'
+}
+
+function pad(value) {
+  return String(value).padStart(2, '0')
+}
+
+function clock(date, now, withYear) {
+  const day = `${pad(date.getDate())}.${pad(date.getMonth() + 1)}`
+  const year = withYear || date.getFullYear() !== now.getFullYear() ? `.${date.getFullYear()}` : ''
+  return `${day}${year}, ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+export function planUpdatedLabel(value, now = new Date()) {
+  const date = new Date(value || '')
+  if (Number.isNaN(date.getTime())) return ''
+  return `изменён ${clock(date, now, false)}`
+}
+
+export function itemStamp(item, now = new Date()) {
+  if (!item?.created_at) return { text: 'не сохранён', title: 'Ещё не сохранён' }
+  const created = new Date(item.created_at)
+  const updated = new Date(item.updated_at || item.created_at)
+  if (Number.isNaN(created.getTime())) return { text: 'не сохранён', title: 'Ещё не сохранён' }
+  const changed = !Number.isNaN(updated.getTime()) && updated.getTime() > created.getTime()
+  const when = changed ? updated : created
+  return {
+    text: `${changed ? 'изменён' : 'создан'} ${clock(when, now, false)}`,
+    title: clock(when, now, true),
+  }
 }

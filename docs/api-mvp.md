@@ -43,6 +43,8 @@
 - `bible` — `module_short_name` (например `RST`), необязательный `module_short_name_second`, `book`, `chapter`, `verse`, `reference`, `quote`
 - `text` — `caption`, `reference`, `quote`, `class` (если пустой, сервер ставит `-1`)
 
+У пункта есть `created_at` и `updated_at`. Клиент их не задаёт: сервер оставляет `created_at` при том же id, а `updated_at` меняет только если изменился текст пункта. Перестановка места `updated_at` не двигает. В JSON эти поля есть. В `plan.vplt`, History.ini и PlanDef.ini их нет: VisioBible их не хранит.
+
 `POST /api/plans`
 
 ```json
@@ -60,6 +62,8 @@
 `DELETE /api/plans/{id}?version=` — помечает план удалённым и увеличивает версию. Повтор с той же версией идемпотентен.
 
 `POST /api/plans/import` — `format` равен `json`, `vplt`, `history` или `plandef`. `payload` — текст. `title` необязателен.
+
+`POST /api/plans/parse` — то же тело `format` и `payload`, но план в базу не пишется. Ответ: `{"title","items","encoding_notice"}`. `encoding_notice` — те же поля, что импорт добавляет при подозрительной кодировке (`mojibake`, `encoding_warning`, `suggested_text`, `suggested_title`, `suggested_items`). Лимит пунктов и длины полей тот же, что у импорта: не больше 500 пунктов.
 
 Для `vplt`, `history` и `plandef` сервер не переписывает текст молча. Если payload — уже валидный UTF-8, но похож на кириллицу, прочитанную как windows-1251 или latin-1 и сохранённую снова, план записывается как прислан, а в ответ добавляются поля:
 
@@ -88,7 +92,9 @@ PlanDef — секции `[Plan]`, `[Bible.N]`, `[Text.N]`, `[Songs.N]`. Пер�
 
 Ищет по названию, альтернативному названию и тексту частей. Нужна сессия. Видны песни своих пространств (включая `draft`, `pending`, `rejected`) и одобренные публичные. `limit` от 1 до 100, по умолчанию 20. `offset` от 0 до 10000. Символы `%`, `_` и `\` в запросе не являются шаблоном.
 
-Ответ: `{"songs":[{"songbook_id","fbid","title","songbook_title","dimension_id","status"}]}`.
+Ответ: `{"songs":[{"songbook_id","fbid","title","songbook_title","dimension_id","status","section_title"}]}`. `section_title` — название первого раздела, в котором стоит песня. Его нет, если разделов нет.
+
+`section_id` сужает выдачу до песен одного раздела. Раздел должен принадлежать доступному сборнику. Если вместе с ним передан `songbook_id` другого сборника, ответ `400`. Неизвестный или чужой раздел — `404`. Фильтр `songbook_id` по-прежнему берёт ровно этот сборник и не включает вложенные сборники `parent_id`.
 
 ## Смысловой поиск
 
@@ -102,7 +108,36 @@ PlanDef — секции `[Plan]`, `[Bible.N]`, `[Text.N]`, `[Songs.N]`. Пер�
 
 `GET /api/songs/semantic?q=&songbook_id=&dimension_id=&community_id=&limit=`
 
-Те же правила видимости, что у `GET /api/songs/search`: свои пространства и одобренные сборники. `limit` от 1 до 100, по умолчанию 20. Ответ: `{"songs":[{"songbook_id","fbid","title","songbook_title","dimension_id","status","fragment"}]}`. `fragment` — начало текста песни. Порядок — от ближайшей по смыслу.
+Те же правила видимости, что у `GET /api/songs/search`: свои пространства и одобренные сборники. `limit` от 1 до 100, по умолчанию 20. Ответ: `{"songs":[{"songbook_id","fbid","title","songbook_title","dimension_id","status","section_title","fragment"}]}`. `fragment` — начало текста песни. `section_id` работает так же, как в поиске по словам. Порядок — от ближайшей по смыслу.
+
+## Разделы сборника
+
+Один сборник делится на разделы. Песня может стоять в нескольких. Группы внутри файла `.vbm` сюда не импортируются.
+
+```sql
+songbook_sections (id, songbook_id, title, position)
+songbook_section_songs (section_id, songbook_id, fbid, position)
+```
+
+Писать раздел может тот же участник, кто правит сборник.
+
+`GET /api/songbooks/{id}/sections` — `[{id,title,position,count,songs}]`. `songs` — список `fbid` по порядку.
+
+`POST /api/songbooks/{id}/sections` — `{"title"}`.
+
+`PUT /api/songbooks/{id}/sections/{sectionID}` — новое `title`.
+
+`DELETE /api/songbooks/{id}/sections/{sectionID}` — удаляет раздел и его состав.
+
+`PUT /api/sections/{id}/songs` — `{"fbids":["..."]}` заменяет состав. Песня должна быть в этом сборнике и не быть удалённой.
+
+`GET /api/songbooks/tree` — сборники, которые видны в поиске, кроме скрытых. Группы по порядку: общины пользователя, личные, затем одобренные чужие.
+
+```json
+[{"group":"community","dimension_id":"...","name":"Преображение","songbooks":[{"id","title","short_name","status","sections":[{"id","title","count"}]}]}]
+```
+
+`group` также бывает `personal` и `approved`.
 
 `GET /api/bible/semantic?q=&module=&limit=`
 

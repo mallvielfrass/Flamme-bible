@@ -65,6 +65,21 @@ export function clipPlanText(text) {
   return `${flat.slice(0, 280)}…`
 }
 
+export function readPlanFile(bytes, encoding) {
+  const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || [])
+  const start = data.length >= 3 && data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf ? 3 : 0
+  const slice = data.subarray(start)
+  if (encoding === 'utf-8') return { text: new TextDecoder('utf-8').decode(slice), encoding: 'utf-8' }
+  if (encoding === 'windows-1251') return { text: new TextDecoder('windows-1251').decode(slice), encoding: 'windows-1251' }
+  let utf8 = true
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(slice)
+  } catch {
+    utf8 = false
+  }
+  return { text: decodePlanText(data), encoding: utf8 ? 'utf-8' : 'windows-1251' }
+}
+
 export function decodePlanText(bytes) {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
   let start = 0

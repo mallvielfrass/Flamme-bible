@@ -14,21 +14,25 @@ import (
 )
 
 type planItem struct {
-	ID                    string `json:"id"`
-	Kind                  string `json:"kind"`
-	SongID                string `json:"song_id"`
-	SongbookID            string `json:"songbook_id"`
-	Title                 string `json:"title"`
-	ModuleShortName       string `json:"module_short_name"`
-	ModuleShortNameSecond string `json:"module_short_name_second"`
-	Book                  int    `json:"book"`
-	Chapter               int    `json:"chapter"`
-	Verse                 int    `json:"verse"`
-	Caption               string `json:"caption"`
-	Reference             string `json:"reference"`
-	Quote                 string `json:"quote"`
-	Class                 string `json:"class"`
-	Position              int    `json:"position"`
+	ID                    string    `json:"id"`
+	Kind                  string    `json:"kind"`
+	SongID                string    `json:"song_id"`
+	SongbookID            string    `json:"songbook_id"`
+	Title                 string    `json:"title"`
+	ModuleShortName       string    `json:"module_short_name"`
+	ModuleShortNameSecond string    `json:"module_short_name_second"`
+	Book                  int       `json:"book"`
+	Chapter               int       `json:"chapter"`
+	Verse                 int       `json:"verse"`
+	Caption               string    `json:"caption"`
+	Reference             string    `json:"reference"`
+	Quote                 string    `json:"quote"`
+	Class                 string    `json:"class"`
+	Position              int       `json:"position"`
+	CreatedAt             time.Time `json:"created_at,omitempty"`
+	UpdatedAt             time.Time `json:"updated_at,omitempty"`
+	SongbookTitle         string    `json:"songbook_title,omitempty"`
+	SectionTitle          string    `json:"section_title,omitempty"`
 }
 
 type planView struct {
@@ -132,6 +136,36 @@ func (s *Server) importPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, planImportResult{planView: view, planEncodingNotice: encodingNotice(body.Format, body.Payload)})
+}
+
+func (s *Server) parsePlan(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.principal(r); err != nil {
+		writeMapped(w, err)
+		return
+	}
+	var body struct {
+		Format  string `json:"format"`
+		Payload string `json:"payload"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeMapped(w, errRequest)
+		return
+	}
+	title, items, err := parsePlanPayload(body.Format, []byte(body.Payload))
+	if err != nil {
+		writePlanErr(w, err)
+		return
+	}
+	items, err = normalizeItems(items)
+	if err != nil {
+		writePlanErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"title":           strings.TrimSpace(title),
+		"items":           items,
+		"encoding_notice": encodingNotice(body.Format, body.Payload),
+	})
 }
 
 func (s *Server) insertPlan(ctx context.Context, userID, title, dimensionID string, items []planItem) (planView, error) {
@@ -524,12 +558,23 @@ func loadPlan(ctx context.Context, q planQuerier, id string) (planView, error) {
 	}
 	view.UpdatedAt = view.UpdatedAt.UTC()
 	rows, err := q.Query(ctx, `
-		SELECT id::text, position, kind, song_id, songbook_id::text, title,
-		       module_short_name, module_short_name_second, book, chapter, verse,
-		       caption, reference, quote, class
-		FROM plan_items
-		WHERE plan_id = $1
-		ORDER BY position, id
+		SELECT pi.id::text, pi.position, pi.kind, pi.song_id, pi.songbook_id::text, pi.title,
+		       pi.module_short_name, pi.module_short_name_second, pi.book, pi.chapter, pi.verse,
+		       pi.caption, pi.reference, pi.quote, pi.class, pi.created_at, pi.updated_at,
+		       COALESCE(b.title, ''),
+		       COALESCE((
+		         SELECT sec.title
+		         FROM songbook_section_songs ss
+		         JOIN songbook_sections sec ON sec.id = ss.section_id
+		         WHERE pi.songbook_id IS NOT NULL
+		           AND ss.songbook_id = pi.songbook_id AND ss.fbid = pi.song_id
+		         ORDER BY sec.position, sec.title, sec.id
+		         LIMIT 1
+		       ), '')
+		FROM plan_items pi
+		LEFT JOIN songbooks b ON b.id = pi.songbook_id
+		WHERE pi.plan_id = $1
+		ORDER BY pi.position, pi.id
 	`, id)
 	if err != nil {
 		return planView{}, err
@@ -542,10 +587,13 @@ func loadPlan(ctx context.Context, q planQuerier, id string) (planView, error) {
 		if err := rows.Scan(
 			&item.ID, &item.Position, &item.Kind, &item.SongID, &songbook, &item.Title,
 			&item.ModuleShortName, &item.ModuleShortNameSecond, &item.Book, &item.Chapter, &item.Verse,
-			&item.Caption, &item.Reference, &item.Quote, &item.Class,
+			&item.Caption, &item.Reference, &item.Quote, &item.Class, &item.CreatedAt, &item.UpdatedAt,
+			&item.SongbookTitle, &item.SectionTitle,
 		); err != nil {
 			return planView{}, err
 		}
+		item.CreatedAt = item.CreatedAt.UTC()
+		item.UpdatedAt = item.UpdatedAt.UTC()
 		if songbook != nil {
 			item.SongbookID = *songbook
 		}
@@ -557,11 +605,72 @@ func loadPlan(ctx context.Context, q planQuerier, id string) (planView, error) {
 	return view, nil
 }
 
+type keptItem struct {
+	created time.Time
+	updated time.Time
+	body    string
+}
+
+func itemBody(item planItem) string {
+	return strings.Join([]string{
+		item.Kind,
+		item.SongID,
+		item.SongbookID,
+		item.Title,
+		item.ModuleShortName,
+		item.ModuleShortNameSecond,
+		strconv.Itoa(item.Book),
+		strconv.Itoa(item.Chapter),
+		strconv.Itoa(item.Verse),
+		item.Caption,
+		item.Reference,
+		item.Quote,
+		item.Class,
+	}, "\x1f")
+}
+
 func replaceItems(ctx context.Context, tx pgx.Tx, planID string, items []planItem) error {
+	rows, err := tx.Query(ctx, `
+		SELECT id::text, created_at, updated_at, kind, song_id, COALESCE(songbook_id::text, ''), title,
+		       module_short_name, module_short_name_second, book, chapter, verse,
+		       caption, reference, quote, class
+		FROM plan_items
+		WHERE plan_id = $1
+	`, planID)
+	if err != nil {
+		return err
+	}
+	old := map[string]keptItem{}
+	for rows.Next() {
+		var item planItem
+		var created, updated time.Time
+		if err := rows.Scan(
+			&item.ID, &created, &updated, &item.Kind, &item.SongID, &item.SongbookID, &item.Title,
+			&item.ModuleShortName, &item.ModuleShortNameSecond, &item.Book, &item.Chapter, &item.Verse,
+			&item.Caption, &item.Reference, &item.Quote, &item.Class,
+		); err != nil {
+			rows.Close()
+			return err
+		}
+		old[item.ID] = keptItem{created: created.UTC(), updated: updated.UTC(), body: itemBody(item)}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
 	if _, err := tx.Exec(ctx, `DELETE FROM plan_items WHERE plan_id = $1`, planID); err != nil {
 		return err
 	}
+	now := time.Now().UTC()
 	for _, item := range items {
+		created, updated := now, now
+		if prev, ok := old[item.ID]; ok {
+			created = prev.created
+			if prev.body == itemBody(item) {
+				updated = prev.updated
+			}
+		}
 		var songbook any
 		if item.SongbookID != "" {
 			songbook = item.SongbookID
@@ -570,15 +679,15 @@ func replaceItems(ctx context.Context, tx pgx.Tx, planID string, items []planIte
 			INSERT INTO plan_items (
 				id, plan_id, position, kind, song_id, songbook_id, title,
 				module_short_name, module_short_name_second, book, chapter, verse,
-				caption, reference, quote, class
+				caption, reference, quote, class, created_at, updated_at
 			) VALUES (
 				$1,$2,$3,$4,$5,$6,$7,
 				$8,$9,$10,$11,$12,
-				$13,$14,$15,$16
+				$13,$14,$15,$16,$17,$18
 			)
 		`, item.ID, planID, item.Position, item.Kind, item.SongID, songbook, item.Title,
 			item.ModuleShortName, item.ModuleShortNameSecond, item.Book, item.Chapter, item.Verse,
-			item.Caption, item.Reference, item.Quote, item.Class); err != nil {
+			item.Caption, item.Reference, item.Quote, item.Class, created, updated); err != nil {
 			return err
 		}
 	}

@@ -6,6 +6,8 @@ import { statusText } from '../checks'
 const props = defineProps({
   token: { type: String, default: '' },
   picking: { type: Boolean, default: false },
+  songbookId: { type: String, default: '' },
+  sectionId: { type: String, default: '' },
 })
 const emit = defineEmits(['pick'])
 
@@ -42,8 +44,12 @@ async function run(nextOffset) {
   }
   loading.value = true
   try {
+    const scope = new URLSearchParams()
+    if (props.songbookId) scope.set('songbook_id', props.songbookId)
+    if (props.sectionId) scope.set('section_id', props.sectionId)
     if (mode.value === 'meaning') {
       const params = new URLSearchParams({ q })
+      scope.forEach((value, key) => params.set(key, value))
       const data = await api(`/api/songs/semantic?${params}`, { token: props.token })
       songs.value = data.songs || []
       offset.value = songs.value.length
@@ -52,6 +58,7 @@ async function run(nextOffset) {
       return
     }
     const params = new URLSearchParams({ q, limit: '20', offset: String(nextOffset) })
+    scope.forEach((value, key) => params.set(key, value))
     const data = await api(`/api/songs/search?${params}`, { token: props.token })
     const list = data.songs || []
     songs.value = nextOffset === 0 ? list : songs.value.concat(list)
@@ -78,6 +85,7 @@ function search() {
     <button type="button" class="tab" :class="{ on: mode === 'meaning' }" @click="setMode('meaning')">По смыслу</button>
   </div>
   <form class="search-bar" @submit.prevent="search">
+    <slot name="filter" />
     <label class="grow">Найти песню
       <input
         v-model="query"
@@ -102,9 +110,9 @@ function search() {
         <strong class="title-serif">{{ song.title || 'Без названия' }}</strong>
         <span class="badge" :class="song.status">{{ statusText(song.status) }}</span>
       </div>
-      <p class="hint">{{ song.songbook_title || 'Сборник' }}</p>
+      <p class="hint">{{ [song.songbook_title, song.section_title].filter(Boolean).join(' · ') || 'Сборник' }}</p>
       <p v-if="song.fragment" class="quote">{{ song.fragment }}</p>
-      <button v-if="picking" class="btn slim" type="button" @click="emit('pick', song)">Добавить в план</button>
+      <button v-if="picking" class="btn slim" type="button" @click="emit('pick', song)">Добавить</button>
     </li>
   </ul>
   <button

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -278,5 +280,142 @@ func TestPlanImportKeepsMojibakeUntilAsked(t *testing.T) {
 	mustJSON(t, raw, &clean)
 	if clean.Mojibake {
 		t.Fatal("обычный план помечен")
+	}
+}
+
+func TestPlanParseDoesNotWrite(t *testing.T) {
+	srv := newTestServer(t)
+	owner := registerUser(t, srv, "owner@example.com", "secret-pass", nil)
+	payload := `<VisioBibleJournal><Journal Name="Text"><Item Caption="Тихая" Quote="мир" Class="-1"/></Journal></VisioBibleJournal>`
+	code, raw := api(t, srv, owner.Token, http.MethodPost, "/api/plans/parse", map[string]any{
+		"format": "vplt", "payload": payload,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("разбор %d %s", code, raw)
+	}
+	var parsed struct {
+		Title string     `json:"title"`
+		Items []planItem `json:"items"`
+	}
+	mustJSON(t, raw, &parsed)
+	if len(parsed.Items) != 1 || parsed.Items[0].Caption != "Тихая" {
+		t.Fatalf("пункты %+v", parsed.Items)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/plans?scope=all", nil)
+	if code != http.StatusOK {
+		t.Fatalf("список %d %s", code, raw)
+	}
+	var listed []planView
+	mustJSON(t, raw, &listed)
+	if len(listed) != 0 {
+		t.Fatalf("разбор записал план %+v", listed)
+	}
+	code, raw = api(t, srv, "", http.MethodPost, "/api/plans/parse", map[string]any{
+		"format": "vplt", "payload": payload,
+	})
+	if code != http.StatusUnauthorized {
+		t.Fatalf("без сессии %d %s", code, raw)
+	}
+	items := make([]planItem, 501)
+	for i := range items {
+		items[i] = planItem{Kind: "text", Caption: "a", Quote: "b"}
+	}
+	body, err := json.Marshal(map[string]any{"items": items})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodPost, "/api/plans/parse", map[string]any{
+		"format": "json", "payload": string(body),
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("лимит %d %s", code, raw)
+	}
+}
+
+func TestPlanItemTimesStayOnReorder(t *testing.T) {
+	srv := newTestServer(t)
+	owner := registerUser(t, srv, "owner@example.com", "secret-pass", nil)
+	code, raw := api(t, srv, owner.Token, http.MethodPost, "/api/plans", map[string]any{
+		"title": "Времена",
+		"items": []any{
+			map[string]any{"kind": "text", "caption": "Первый", "quote": "а"},
+			map[string]any{"kind": "text", "caption": "Второй", "quote": "б"},
+		},
+	})
+	if code != http.StatusOK {
+		t.Fatalf("план %d %s", code, raw)
+	}
+	var plan planView
+	mustJSON(t, raw, &plan)
+	if len(plan.Items) != 2 || plan.Items[0].CreatedAt.IsZero() || !sameInstant(plan.Items[0].CreatedAt, plan.Items[0].UpdatedAt) {
+		t.Fatalf("новые пункты %+v", plan.Items)
+	}
+	first, second := plan.Items[0], plan.Items[1]
+	reordered := []planItem{second, first}
+	reordered[0].CreatedAt = first.CreatedAt.Add(-48 * time.Hour)
+	code, raw = api(t, srv, owner.Token, http.MethodPut, "/api/plans/"+plan.ID, map[string]any{
+		"title": plan.Title, "version": plan.Version, "updated_at": plan.UpdatedAt, "items": reordered,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("перестановка %d %s", code, raw)
+	}
+	mustJSON(t, raw, &plan)
+	byID := map[string]planItem{}
+	for _, item := range plan.Items {
+		byID[item.ID] = item
+	}
+	if !sameInstant(byID[first.ID].CreatedAt, first.CreatedAt) || !sameInstant(byID[first.ID].UpdatedAt, first.UpdatedAt) {
+		t.Fatalf("время сдвинулось %+v", byID[first.ID])
+	}
+	if plan.Items[0].ID != second.ID {
+		t.Fatalf("порядок %+v", plan.Items)
+	}
+	edited := plan.Items
+	edited[1].Quote = "изменено"
+	edited[1].CreatedAt = time.Time{}
+	code, raw = api(t, srv, owner.Token, http.MethodPut, "/api/plans/"+plan.ID, map[string]any{
+		"title": plan.Title, "version": plan.Version, "updated_at": plan.UpdatedAt, "items": edited,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("правка %d %s", code, raw)
+	}
+	mustJSON(t, raw, &plan)
+	changed := plan.Items[1]
+	if changed.ID != first.ID || !sameInstant(changed.CreatedAt, first.CreatedAt) || !changed.UpdatedAt.After(first.UpdatedAt) {
+		t.Fatalf("после правки %+v", changed)
+	}
+	if !sameInstant(plan.Items[0].UpdatedAt, second.UpdatedAt) {
+		t.Fatalf("сосед изменился %+v", plan.Items[0])
+	}
+
+	ctx := context.Background()
+	if _, err := testPool.Exec(ctx, `ALTER TABLE plan_items DROP COLUMN created_at, DROP COLUMN updated_at`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, testPool); err != nil {
+		t.Fatal(err)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/plans/"+plan.ID, nil)
+	if code != http.StatusOK {
+		t.Fatalf("после миграции %d %s", code, raw)
+	}
+	mustJSON(t, raw, &plan)
+	if !sameInstant(plan.Items[0].CreatedAt, plan.UpdatedAt) || !sameInstant(plan.Items[0].UpdatedAt, plan.UpdatedAt) {
+		t.Fatalf("заполнение %+v план %s", plan.Items[0], plan.UpdatedAt)
+	}
+	past := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	if _, err := testPool.Exec(ctx, `UPDATE plan_items SET updated_at = $2 WHERE id = $1`, plan.Items[0].ID, past); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, testPool); err != nil {
+		t.Fatal(err)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/plans/"+plan.ID, nil)
+	if code != http.StatusOK {
+		t.Fatalf("повтор %d %s", code, raw)
+	}
+	mustJSON(t, raw, &plan)
+	if !sameInstant(plan.Items[0].UpdatedAt, past) {
+		t.Fatalf("повторная миграция затёрла время %s", plan.Items[0].UpdatedAt)
 	}
 }
