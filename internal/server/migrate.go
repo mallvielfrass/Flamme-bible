@@ -38,7 +38,10 @@ func Migrate(ctx context.Context, db *pgxpool.Pool) error {
 	if err := migratePlansUI(ctx, db); err != nil {
 		return err
 	}
-	return migrateAdmin(ctx, db)
+	if err := migrateAdmin(ctx, db); err != nil {
+		return err
+	}
+	return migrateEmbedQueue(ctx, db)
 }
 
 func checkPostgres(ctx context.Context, db *pgxpool.Pool) error {

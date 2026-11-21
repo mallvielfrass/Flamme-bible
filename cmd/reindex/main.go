@@ -22,6 +22,7 @@ func run(args []string) int {
 	fs.SetOutput(os.Stderr)
 	dir := fs.String("import", "", "каталог BibleQuote: bibleqt.ini и файлы книг")
 	moduleID := fs.String("module", "", "id модуля, в который записать стихи")
+	process := fs.Bool("process", false, "сразу обработать очередь, а не только поставить задания")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -55,6 +56,11 @@ func run(args []string) int {
 	}
 	api := server.New(pool)
 	api.SetEmbedder(server.NewHTTPEmbedder(embedURL, os.Getenv("EMBED_MODEL")))
+	api.SetEmbedConfig(server.EmbedConfigFromEnv())
+	if err := api.EnsureEmbedSettings(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	if *dir != "" {
 		n, err := api.ImportBibleModule(ctx, *moduleID, *dir)
 		if err != nil {
@@ -68,7 +74,15 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Printf("части песен: заново %d, без изменений %d\n", stats.SongsEmbedded, stats.SongsSkipped)
-	fmt.Printf("модули: %d, отрывки заново %d, без изменений %d\n", stats.Modules, stats.PassagesEmbedded, stats.PassagesSkipped)
+	fmt.Printf("части песен в очередь: %d, без изменений %d\n", stats.SongsEmbedded, stats.SongsSkipped)
+	fmt.Printf("модули: %d, отрывки в очередь: %d, без изменений %d\n", stats.Modules, stats.PassagesEmbedded, stats.PassagesSkipped)
+	if !*process {
+		return 0
+	}
+	if err := api.DrainEmbedQueue(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println("очередь обработана")
 	return 0
 }

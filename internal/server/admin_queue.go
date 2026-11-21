@@ -73,6 +73,20 @@ func (s *Server) loadSubmissions(ctx context.Context, q string) ([]submission, e
 	if err != nil {
 		return nil, err
 	}
+	ids := make([]string, len(books))
+	for i := range books {
+		ids[i] = books[i].ID
+	}
+	counts, err := s.songIndexCounts(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range books {
+		if c, ok := counts[books[i].ID]; ok {
+			books[i].IndexPending = c.Pending
+			books[i].IndexFailed = c.Failed
+		}
+	}
 	return append(books, modules...), nil
 }
 

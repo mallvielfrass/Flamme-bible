@@ -49,6 +49,139 @@ func NewHTTPEmbedder(endpoint, model string) *HTTPEmbedder {
 
 func (e *HTTPEmbedder) Model() string { return e.model }
 
+func (e *HTTPEmbedder) root() string {
+	u := strings.TrimRight(e.endpoint, "/")
+	u = strings.TrimSuffix(u, "/embed")
+	return strings.TrimRight(u, "/")
+}
+
+type embedRuntime struct {
+	ModelID   string
+	Dim       int
+	MaxTokens int
+}
+
+// Info читает TEI GET /info. Размерность в 1.9.4 в /info нет: тогда один пробный вектор.
+func (e *HTTPEmbedder) Info(ctx context.Context) (embedRuntime, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.root()+"/info", nil)
+	if err != nil {
+		return embedRuntime{}, err
+	}
+	res, err := e.client.Do(req)
+	if err != nil {
+		return embedRuntime{}, err
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return embedRuntime{}, err
+	}
+	if res.StatusCode != http.StatusOK {
+		return embedRuntime{}, fmt.Errorf("эмбеддер info: %s", res.Status)
+	}
+	info, err := parseEmbedInfo(raw)
+	if err != nil {
+		return embedRuntime{}, err
+	}
+	if info.Dim <= 0 {
+		vecs, err := e.Embed(ctx, embedQuery, []string{"."})
+		if err != nil {
+			return embedRuntime{}, err
+		}
+		if len(vecs) != 1 || len(vecs[0]) == 0 {
+			return embedRuntime{}, fmt.Errorf("эмбеддер не сообщил размерность")
+		}
+		info.Dim = len(vecs[0])
+	}
+	if info.MaxTokens <= 0 {
+		info.MaxTokens = embedMaxTokens
+	}
+	return info, nil
+}
+
+func parseEmbedInfo(raw []byte) (embedRuntime, error) {
+	var body struct {
+		ModelID string `json:"model_id"`
+		Dim     int    `json:"embedding_dimension"`
+		DimAlt  int    `json:"dimension"`
+		Max     int    `json:"max_input_length"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return embedRuntime{}, err
+	}
+	if strings.TrimSpace(body.ModelID) == "" {
+		return embedRuntime{}, fmt.Errorf("эмбеддер info без model_id")
+	}
+	dim := body.Dim
+	if dim <= 0 {
+		dim = body.DimAlt
+	}
+	return embedRuntime{ModelID: body.ModelID, Dim: dim, MaxTokens: body.Max}, nil
+}
+
+// Tokenize вызывает TEI POST /tokenize. Ошибка значит, что воркер возьмёт approxTokens.
+func (e *HTTPEmbedder) Tokenize(ctx context.Context, texts []string) ([]int, error) {
+	if len(texts) == 0 {
+		return nil, nil
+	}
+	payload, err := json.Marshal(map[string]any{"inputs": texts})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.root()+"/tokenize", bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := e.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 8<<20))
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("эмбеддер tokenize: %s", res.Status)
+	}
+	return parseTokenCounts(raw, len(texts))
+}
+
+func parseTokenCounts(raw []byte, n int) ([]int, error) {
+	var ids [][]int
+	if err := json.Unmarshal(raw, &ids); err == nil && len(ids) == n {
+		out := make([]int, n)
+		for i, row := range ids {
+			out[i] = len(row)
+			if out[i] < 1 {
+				out[i] = 1
+			}
+			if out[i] > embedMaxTokens {
+				out[i] = embedMaxTokens
+			}
+		}
+		return out, nil
+	}
+	var objects [][]struct {
+		ID int `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &objects); err == nil && len(objects) == n {
+		out := make([]int, n)
+		for i, row := range objects {
+			out[i] = len(row)
+			if out[i] < 1 {
+				out[i] = 1
+			}
+			if out[i] > embedMaxTokens {
+				out[i] = embedMaxTokens
+			}
+		}
+		return out, nil
+	}
+	return nil, fmt.Errorf("не разобран ответ tokenize")
+}
+
 func (e *HTTPEmbedder) Embed(ctx context.Context, kind string, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil

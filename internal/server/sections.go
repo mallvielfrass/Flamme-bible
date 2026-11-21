@@ -25,11 +25,13 @@ type treeSection struct {
 }
 
 type treeBook struct {
-	ID        string        `json:"id"`
-	Title     string        `json:"title"`
-	ShortName string        `json:"short_name"`
-	Status    string        `json:"status"`
-	Sections  []treeSection `json:"sections"`
+	ID           string        `json:"id"`
+	Title        string        `json:"title"`
+	ShortName    string        `json:"short_name"`
+	Status       string        `json:"status"`
+	IndexPending int           `json:"index_pending"`
+	IndexFailed  int           `json:"index_failed"`
+	Sections     []treeSection `json:"sections"`
 }
 
 type treeGroup struct {
@@ -121,11 +123,20 @@ func (s *Server) songbookTree(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	indexCounts, err := s.songIndexCounts(ctx, ids)
+	if err != nil {
+		writeMapped(w, err)
+		return
+	}
 	var personal *treeGroup
 	var approved *treeGroup
 	var communities []*treeGroup
 	communityAt := map[string]int{}
 	for _, row := range books {
+		if c, ok := indexCounts[row.book.ID]; ok {
+			row.book.IndexPending = c.Pending
+			row.book.IndexFailed = c.Failed
+		}
 		row.book.Sections = byBook[row.book.ID]
 		if row.book.Sections == nil {
 			row.book.Sections = []treeSection{}

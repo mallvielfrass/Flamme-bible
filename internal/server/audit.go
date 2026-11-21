@@ -36,6 +36,7 @@ func auditText(action, kind, title, note string) string {
 	what := map[string]string{
 		"songbook": "сборник", "module": "модуль", "user": "пользователя",
 		"release": "сборку", "community": "общину", "member": "участника", "invite": "приглашение",
+		"embed": "индексацию",
 	}[kind]
 	if what == "" {
 		what = kind
@@ -54,6 +55,8 @@ func auditText(action, kind, title, note string) string {
 		"release_notes":  "поправил заметки",
 		"member_exclude": "исключил", "member_include": "вернул", "member_role": "сменил роль",
 		"invite_revoke": "отозвал", "publish_decision": "решил публикацию",
+		"embed_settings": "изменил скорость", "embed_retry": "повторил",
+		"embed_reindex": "запустил пересчёт", "embed_switch": "переключил индекс",
 	}[action]
 	if verb == "" {
 		verb = action

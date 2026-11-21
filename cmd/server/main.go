@@ -53,6 +53,7 @@ func main() {
 	}
 	if embedURL := strings.TrimSpace(os.Getenv("EMBED_URL")); embedURL != "" {
 		api.SetEmbedder(server.NewHTTPEmbedder(embedURL, os.Getenv("EMBED_MODEL")))
+		api.SetEmbedConfig(server.EmbedConfigFromEnv())
 		api.StartIndexer(context.Background())
 		log.Printf("смысловой поиск: %s", api.EmbedModel())
 	} else {

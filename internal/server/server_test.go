@@ -37,7 +37,8 @@ func TestMain(m *testing.M) {
 func reset(t *testing.T) {
 	t.Helper()
 	_, err := testPool.Exec(context.Background(), `
-		TRUNCATE admin_audit, bible_passages, module_verses, song_embeddings,
+		DROP TABLE IF EXISTS song_embeddings_next, bible_passages_next, song_embeddings_prev, bible_passages_prev;
+		TRUNCATE admin_audit, embedding_jobs, bible_passages, module_verses, song_embeddings,
 		         plan_items, plans, modules, client_releases, app_settings,
 		         song_hides, conflicts, operation_results, change_log, song_order,
 		         songbook_section_songs, songbook_sections, songs, songbooks,

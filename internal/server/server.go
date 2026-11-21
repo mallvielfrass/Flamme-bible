@@ -36,15 +36,23 @@ var (
 )
 
 type Server struct {
-	db          *pgxpool.Pool
-	sessionTTL  time.Duration
-	trustProxy  bool
-	authLimit   *ipLimiter
-	cleanMu     sync.Mutex
-	lastClean   time.Time
-	embedder    Embedder
-	indexInline bool
-	indexCh     chan semanticJob
+	db            *pgxpool.Pool
+	sessionTTL    time.Duration
+	trustProxy    bool
+	authLimit     *ipLimiter
+	cleanMu       sync.Mutex
+	lastClean     time.Time
+	embedder      Embedder
+	indexInline   bool
+	indexCh       chan semanticJob
+	embedWake     chan struct{}
+	embedMu       sync.Mutex
+	embedCfg      embedEnv
+	embedLive     embedRuntime
+	embedLiveAt   time.Time
+	embedMeasured float64
+	embedSamples  int
+	embedBucket   tokenBucket
 }
 
 type principal struct {

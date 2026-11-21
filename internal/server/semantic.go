@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -83,7 +82,7 @@ func (s *Server) StartIndexer(ctx context.Context) {
 	}
 	s.indexCh = make(chan semanticJob, 64)
 	go s.indexLoop(ctx)
-	s.enqueue(semanticJob{allSongs: true})
+	s.startEmbedWorkers(ctx)
 }
 
 func (s *Server) noteAppliedSongs(bookID string, prepared []preparedOp, results []opResult) {
@@ -235,7 +234,7 @@ func (s *Server) reindexSongs(ctx context.Context) (int, int, error) {
 }
 
 func (s *Server) indexSongs(ctx context.Context, keys []songKey) (int, int, error) {
-	if s.embedder == nil {
+	if s.embedder == nil || s.blockActiveEmbed(ctx) {
 		return 0, 0, nil
 	}
 	docs, err := s.loadSongDocs(ctx, keys)
@@ -246,19 +245,12 @@ func (s *Server) indexSongs(ctx context.Context, keys []songKey) (int, int, erro
 	if err != nil {
 		return 0, 0, err
 	}
-	type pendingPart struct {
-		songbookID string
-		fbid       string
-		index      int
-		text       string
-		hash       string
-	}
 	type keepSet struct {
 		songbookID string
 		fbid       string
 		indexes    []int32
 	}
-	var pending []pendingPart
+	var pending []songPartJob
 	var keep []keepSet
 	embedded := 0
 	skipped := 0
@@ -285,47 +277,27 @@ func (s *Server) indexSongs(ctx context.Context, keys []songKey) (int, int, erro
 				skipped++
 				continue
 			}
-			pending = append(pending, pendingPart{
-				songbookID: doc.songbookID,
-				fbid:       doc.fbid,
-				index:      draft.index,
-				text:       draft.text,
-				hash:       draft.hash,
+			pending = append(pending, songPartJob{
+				SongbookID: doc.songbookID,
+				FBID:       doc.fbid,
+				Index:      draft.index,
+				Text:       draft.text,
+				Hash:       draft.hash,
 			})
 		}
 		keep = append(keep, keepSet{doc.songbookID, doc.fbid, indexes})
 	}
-	for start := 0; start < len(pending); start += embedBatch {
-		end := start + embedBatch
-		if end > len(pending) {
-			end = len(pending)
-		}
-		chunk := pending[start:end]
-		texts := make([]string, len(chunk))
-		for i := range chunk {
-			texts[i] = chunk[i].text
-		}
-		vecs, err := s.embedder.Embed(ctx, embedPassage, texts)
-		if err != nil {
-			return embedded, skipped, err
-		}
-		if len(vecs) != len(chunk) {
-			return embedded, skipped, fmt.Errorf("эмбеддер вернул %d векторов на %d текстов", len(vecs), len(chunk))
-		}
-		for i := range chunk {
-			if err := validateVector(vecs[i]); err != nil {
-				return embedded, skipped, err
-			}
-			if err := s.upsertSongPart(ctx, chunk[i].songbookID, chunk[i].fbid, chunk[i].index, chunk[i].hash, vecs[i]); err != nil {
-				return embedded, skipped, err
-			}
-			embedded++
-		}
+	if err := s.enqueueSongParts(ctx, "active", pending); err != nil {
+		return embedded, skipped, err
 	}
+	embedded = len(pending)
 	for _, item := range keep {
 		if err := s.deleteStaleSongParts(ctx, item.songbookID, item.fbid, item.indexes); err != nil {
 			return embedded, skipped, err
 		}
+	}
+	if err := s.afterEmbedEnqueue(ctx); err != nil {
+		return embedded, skipped, err
 	}
 	return embedded, skipped, nil
 }
@@ -432,7 +404,13 @@ func (s *Server) upsertSongPart(ctx context.Context, songbookID, fbid string, in
 }
 
 func (s *Server) deleteSongEmbedding(ctx context.Context, songbookID, fbid string) error {
-	_, err := s.db.Exec(ctx, `DELETE FROM song_embeddings WHERE songbook_id = $1 AND fbid = $2`, songbookID, fbid)
+	if _, err := s.db.Exec(ctx, `DELETE FROM song_embeddings WHERE songbook_id = $1 AND fbid = $2`, songbookID, fbid); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(ctx, `
+		DELETE FROM embedding_jobs
+		WHERE object_type = 'song_part' AND songbook_id = $1 AND fbid = $2
+	`, songbookID, fbid)
 	return err
 }
 
@@ -440,9 +418,16 @@ func (s *Server) deleteStaleSongParts(ctx context.Context, songbookID, fbid stri
 	if keep == nil {
 		keep = []int32{}
 	}
-	_, err := s.db.Exec(ctx, `
+	if _, err := s.db.Exec(ctx, `
 		DELETE FROM song_embeddings
 		WHERE songbook_id = $1 AND fbid = $2 AND NOT (part_index = ANY($3::int[]))
+	`, songbookID, fbid, keep); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(ctx, `
+		DELETE FROM embedding_jobs
+		WHERE object_type = 'song_part' AND target = 'active'
+		  AND songbook_id = $1 AND fbid = $2 AND NOT (part_index = ANY($3::int[]))
 	`, songbookID, fbid, keep)
 	return err
 }
@@ -516,6 +501,10 @@ func (s *Server) searchSongsSemantic(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.usableSection(r.Context(), p.UserID, section, book); err != nil {
 		writeMapped(w, err)
+		return
+	}
+	if s.blockActiveEmbed(r.Context()) {
+		s.searchSongs(w, r)
 		return
 	}
 	vec, ok := s.queryVector(r.Context(), q)

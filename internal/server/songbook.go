@@ -41,6 +41,8 @@ type songbookView struct {
 	ModerationNote   string         `json:"moderation_note"`
 	ReviewedBy       *string        `json:"reviewed_by"`
 	ReviewedAt       *time.Time     `json:"reviewed_at"`
+	IndexPending     int            `json:"index_pending"`
+	IndexFailed      int            `json:"index_failed"`
 }
 
 func scanBook(row pgx.Row) (songbookView, error) {
@@ -196,6 +198,21 @@ func (s *Server) listSongbooks(w http.ResponseWriter, r *http.Request) {
 	if err := rows.Err(); err != nil {
 		writeMapped(w, err)
 		return
+	}
+	ids := make([]string, len(list))
+	for i := range list {
+		ids[i] = list[i].ID
+	}
+	counts, err := s.songIndexCounts(r.Context(), ids)
+	if err != nil {
+		writeMapped(w, err)
+		return
+	}
+	for i := range list {
+		if c, ok := counts[list[i].ID]; ok {
+			list[i].IndexPending = c.Pending
+			list[i].IndexFailed = c.Failed
+		}
 	}
 	writeJSON(w, http.StatusOK, list)
 }

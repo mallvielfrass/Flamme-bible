@@ -259,6 +259,8 @@ watch(() => props.dimensionId, load, { immediate: true })
         <strong class="title-serif">{{ book.title || book.short_name || 'Сборник' }}</strong>
         <span class="badge" :class="book.status || 'draft'">{{ bookStatus(book) }}</span>
       </div>
+      <p v-if="book.index_pending" class="hint">Индексируется: {{ book.index_pending }} куплетов</p>
+      <p v-if="book.index_failed" class="hint">Ошибки индексации: {{ book.index_failed }}</p>
       <p v-if="book.short_name" class="hint">{{ book.short_name }}</p>
       <p v-if="book.status === 'rejected' && book.moderation_note" class="hint">Причина: {{ book.moderation_note }}</p>
       <div class="btn-row">
