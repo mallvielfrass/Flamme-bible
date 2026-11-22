@@ -72,11 +72,12 @@ jobs:
         working-directory: desktop
         run: |
           npm ci
+          npm test
           npm run build
       - uses: dtolnay/rust-toolchain@stable
         if: hashFiles('desktop/src-tauri/Cargo.toml') != ''
         with:
-          components: rustfmt
+          components: rustfmt, clippy
       - name: cargo fmt
         if: hashFiles('desktop/src-tauri/Cargo.toml') != ''
         run: cargo fmt --check --manifest-path desktop/src-tauri/Cargo.toml
@@ -94,6 +95,9 @@ jobs:
             libayatana-appindicator3-dev \
             libxdo-dev \
             file
+      - name: cargo clippy
+        if: hashFiles('desktop/src-tauri/Cargo.toml') != ''
+        run: cargo clippy --all-targets --manifest-path desktop/src-tauri/Cargo.toml -- -D warnings
       - name: cargo test
         if: hashFiles('desktop/src-tauri/Cargo.toml') != ''
         run: cargo test --manifest-path desktop/src-tauri/Cargo.toml
