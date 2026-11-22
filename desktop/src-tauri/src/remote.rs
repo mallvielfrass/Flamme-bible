@@ -35,6 +35,21 @@ pub struct AuthReply {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct ModuleExists {
+    pub exists: bool,
+    #[serde(default)]
+    pub uploaded: bool,
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub short_name: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub content_hash: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct Me {
     pub user_id: String,
     #[serde(default)]
@@ -258,6 +273,54 @@ impl Remote {
             .await
             .map_err(|err| err.to_string())?;
         Ok(())
+    }
+
+    pub async fn module_exists(
+        &self,
+        short_name: &str,
+        title: &str,
+        content_hash: &str,
+    ) -> Result<ModuleExists, String> {
+        let body = serde_json::json!({
+            "content_hash": content_hash,
+            "short_name": short_name,
+            "title": title,
+        });
+        self.send(reqwest::Method::POST, "/api/modules/exists", Some(&body))
+            .await
+            .map_err(|err| err.to_string())
+    }
+
+    pub async fn upload_module(
+        &self,
+        module: &crate::bible::BibleIdentity,
+    ) -> Result<ModuleExists, String> {
+        let files = crate::bible::read_upload(module)?;
+        let http = client(Duration::from_secs(180))?;
+        let mut form = reqwest::multipart::Form::new()
+            .text("content_hash", module.content_hash.clone())
+            .text("short_name", module.short_name.clone())
+            .text("title", module.title.clone());
+        for (name, bytes) in files {
+            let part = reqwest::multipart::Part::bytes(bytes)
+                .file_name(name)
+                .mime_str("application/octet-stream")
+                .map_err(|err| err.to_string())?;
+            form = form.part("file", part);
+        }
+        let response = http
+            .post(format!("{}/api/modules/upload", self.base))
+            .bearer_auth(&self.token)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|err| format!("Нет связи с сервером: {err}"))?;
+        let status = response.status();
+        let text = response.text().await.map_err(|err| err.to_string())?;
+        if !status.is_success() {
+            return Err(parse_failure(status.as_u16(), &text).to_string());
+        }
+        serde_json::from_str(&text).map_err(|err| format!("Ответ сервера не разобран: {err}"))
     }
 
     pub async fn me(&self) -> Result<Me, String> {

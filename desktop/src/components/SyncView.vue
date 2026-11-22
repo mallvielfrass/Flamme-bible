@@ -33,7 +33,7 @@ const VISIOBIBLE_OPEN = "Закройте VisioBible и нажмите „Пов
 const visiobibleOpen = computed(() => props.error === VISIOBIBLE_OPEN);
 const place = computed(() => placeLine(props.folder, props.space));
 const screen = computed(() =>
-  props.preview ? syncScreen(props.preview, props.chosen, props.adopted, props.scan?.bibles ?? []) : null,
+  props.preview ? syncScreen(props.preview, props.chosen, props.adopted) : null,
 );
 
 function conflictSong(row: ListedRow): SongRow | null {
@@ -140,7 +140,7 @@ function restore(kind: string, id: string) {
           </div>
         </div>
 
-        <p class="hint bible-line">{{ screen.bible }}</p>
+        <slot name="bibles" />
 
         <details v-if="preview.skipped.length" class="skipped-block">
           <summary>Пропущенные ({{ preview.skipped.length }})</summary>

@@ -64,12 +64,12 @@ describe("sync screen state", () => {
     const group = { book_path: "pv.vbm", book_title: "Песнь Возрождения", section_id: "sec", name: "Хор", action: "conflict", local_name: "Хор А", remote_name: "Хор Б" };
     const data = preview({ groups: [group, { ...group, section_id: "sec2", action: "push_update" }] });
     expect(syncCounts(data)).toMatchObject({ conflicts: 1, send: 1 });
-    const open = syncScreen(data, {}, {}, []);
+    const open = syncScreen(data, {}, {});
     expect(open.ready).toBe(false);
     expect(open.books[0]).toMatchObject({ mode: "name", kind: "group", serverId: "sec", conflictId: "pv.vbm" });
     expect(open.banner).toContain("Группу «Хор А»");
     const chosen = { [groupKey("pv.vbm", "sec")]: { kind: "take_server" as const } };
-    expect(syncScreen(data, chosen, {}, []).ready).toBe(true);
+    expect(syncScreen(data, chosen, {}).ready).toBe(true);
     expect(decisionsFrom(chosen, [], [], data.groups).groups).toEqual([{ book_path: "pv.vbm", section_id: "sec", choice: "take_server" }]);
   });
 
@@ -165,7 +165,7 @@ describe("sync list", () => {
     expect(text).not.toContain("Молодёжка");
     expect(text).not.toContain("Старый");
     expect(bannerText(preview({ songs: [song({ book_path: "a.vbm", book_title: "Песнь Возрождения", action: "push_update" })] }), {})).toContain("Песнь Возрождения");
-    const screen = syncScreen(data, {}, {}, [{ short_name: "RST+", name: "Синодальный" }], { songbooks: ["book-skip"], plans: [] });
+    const screen = syncScreen(data, {}, {}, { songbooks: ["book-skip"], plans: [] });
     expect(screen.books.map((row) => row.title)).toEqual(["Песнь Возрождения", "Молодёжный сборник"]);
     expect(screen.books[0].meta).toBe("2 песни отправятся на сервер · 3 песни в файле");
     expect(screen.books[0].status).toBe("Изменено здесь");
@@ -173,7 +173,6 @@ describe("sync list", () => {
     expect(screen.plans.map((row) => row.status)).toEqual(["Изменено на сервере", "Изменено в VisioBible"]);
     expect(screen.ready).toBe(false);
     expect(screen.hint).toBe("Сначала выберите: добавить новый сборник в папку или пропустить его.");
-    expect(screen.bible).toBe("Модули Библии (RST+) пока только в обзоре, синхронизации модулей нет.");
   });
 
   it("starts only after a new book is accepted and every conflict is chosen", () => {
@@ -189,12 +188,12 @@ describe("sync list", () => {
     const chosen = { [songKey("pv.vbm", "song-1")]: { kind: "take_server" as const } };
     expect(syncReady(data, chosen, adopted)).toBe(true);
     expect(canStart(conflictRows(data.songs, []), chosen, [])).toBe(true);
-    const screen = syncScreen(data, chosen, adopted, []);
+    const screen = syncScreen(data, chosen, adopted);
     expect(screen.ready).toBe(true);
     expect(screen.hint).toBe("");
     expect(screen.books.find((row) => row.title === "Песнь Возрождения")?.status).toBe("Изменено на сервере");
     expect(screen.chips.some((chip) => chip.id === "conflicts")).toBe(true);
-    const open = syncScreen(data, {}, adopted, []);
+    const open = syncScreen(data, {}, adopted);
     expect(open.banner).toContain("Песню «Ты моя сокровенная жизнь» изменили и в VisioBible, и на сервере — нужно выбрать версию.");
     expect(open.books.find((row) => row.mode === "compare")?.conflictId).toBe("song-1");
   });
