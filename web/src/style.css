@@ -1034,13 +1034,19 @@ details.menu {
   overflow: hidden;
 }
 
+#app:has(main.chat-main) .topbar {
+  width: 100%;
+  flex-shrink: 0;
+}
+
 main.chat-main {
   flex: 1;
   min-height: 0;
-  max-width: 1240px;
+  max-width: 1100px;
   width: 100%;
   margin: 0 auto;
   padding: 0 1.4rem 0.4rem;
+  overflow: hidden;
 }
 
 .ai-page {
@@ -1171,7 +1177,7 @@ main.chat-main {
 .ai-ib.red { color: var(--danger); }
 .ai-ib .ai-ic { width: 0.9rem; height: 0.9rem; }
 
-.ai-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.ai-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; height: 100%; }
 
 .ai-head {
   display: flex;
@@ -1186,6 +1192,7 @@ main.chat-main {
   flex: 1;
   min-width: 0;
   font-size: 1.35rem;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1208,6 +1215,15 @@ main.chat-main {
 }
 
 .ai-burger { display: none; }
+.ai-head-btn .ai-ic { width: 0.95rem; height: 0.95rem; }
+
+.ai-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  padding: 0 0 0 1.4rem;
+}
 
 .ai-msgs { flex: 1; overflow: auto; min-height: 0; padding: 1.1rem 0 1rem 1.4rem; }
 
@@ -1266,14 +1282,16 @@ main.chat-main {
 .ai-wait { margin: 0; color: var(--gold); font-family: var(--sans); }
 
 .ai-empty {
-  min-height: 100%;
+  flex: 1;
+  min-height: min-content;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   text-align: center;
   gap: 0.7rem;
-  padding: 1.5rem 1rem 1rem 0;
+  padding: 1.2rem 1rem 0.6rem 0;
 }
 
 .ai-empty h2 { font-size: 1.7rem; display: flex; align-items: center; justify-content: center; gap: 0.35rem; flex-wrap: wrap; }
@@ -1325,7 +1343,10 @@ main.chat-main {
 .twemoji { height: 1.1em; width: 1.1em; margin: 0 0.05em; vertical-align: -0.15em; display: inline-block; }
 .ai-chip .twemoji { height: 1.25rem; width: 1.25rem; margin-top: 0.1rem; flex: none; }
 
-.ai-composer { padding: 0.2rem 0 0 1.4rem; }
+.ai-composer {
+  flex: none;
+  padding: 0.2rem 0 calc(0.15rem + env(safe-area-inset-bottom)) 1.4rem;
+}
 .ai-cbox {
   max-width: 780px;
   margin: 0 auto;
@@ -1347,6 +1368,9 @@ main.chat-main {
 }
 
 .ai-cbar { display: flex; align-items: center; gap: 0.35rem; }
+.ai-clip { width: 1.9rem; height: 1.9rem; color: var(--navy); }
+.ai-clip .ai-ic { width: 1.05rem; height: 1.05rem; }
+.ai-clip:disabled { opacity: 0.45; cursor: not-allowed; }
 .ai-mp { position: relative; }
 
 .ai-mp-btn {
@@ -1438,6 +1462,9 @@ main.chat-main {
 .ai-under {
   max-width: 780px;
   margin: 0.3rem auto 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
   font: 0.75rem var(--sans);
   color: #9a9184;
 }
@@ -1446,10 +1473,10 @@ main.chat-main {
 
 @media (max-width: 860px) {
   #app:has(main.chat-main) .topbar nav .nav-link:not(.router-link-active) { display: none; }
-  #app:has(main.chat-main) .topbar { padding: 0.8rem 1rem 0.6rem; gap: 1rem; }
   #app:has(main.chat-main) .brand { font-size: 1.5rem; }
-  main.chat-main { padding: 0 0.8rem 0.4rem; }
-  .ai-page { display: block; }
+  main.chat-main { padding: 0 1.4rem 0.4rem; }
+  .ai-page { display: flex; flex-direction: column; height: 100%; }
+  .ai-main { flex: 1; height: auto; }
   .ai-side {
     display: none;
     position: fixed;
@@ -1470,17 +1497,38 @@ main.chat-main {
     padding: 0;
     background: rgba(27, 39, 68, 0.3);
   }
-  .ai-burger { display: inline-flex; }
-  .ai-head, .ai-msgs, .ai-composer, .ai-empty { padding-left: 0; }
-  .ai-head { padding-right: 0; }
+  .ai-burger { display: inline-flex; width: 1.9rem; height: 1.9rem; }
+  .ai-head, .ai-msgs, .ai-composer, .ai-stage, .ai-empty { padding-left: 0; }
+  .ai-head { padding: 0.55rem 0 0.45rem; }
+  .ai-head h1 { font-size: 1.35rem; font-weight: 600; }
+  .ai-head-btn { padding: 0.3rem 0.5rem; font-size: 0.85rem; }
   .ai-chips { grid-template-columns: 1fr; }
   .ai-user { max-width: 90%; }
   .ai-ava { width: 1.6rem; height: 1.6rem; font-size: 0.85rem; }
   .ai-ai { gap: 0.45rem; }
+  .ai-cbox textarea { min-height: 3.4rem; }
   .ai-mp-btn { max-width: 12rem; }
   .ai-pv { display: none; }
   .ai-under { display: none; }
-  .ai-head-btn { padding: 0.3rem 0.5rem; }
+}
+
+@media (max-width: 480px) {
+  #app:has(main.chat-main) .topbar {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.75rem;
+    padding: 0.7rem 1.4rem 0.5rem;
+  }
+  #app:has(main.chat-main) .topbar nav {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    min-width: 0;
+  }
+  #app:has(main.chat-main) .brand { font-size: 1.35rem; }
+  #app:has(main.chat-main) .nav-end { margin-left: auto; }
+  #app:has(main.chat-main) .logout { margin-left: 0; }
 }
 
 @media (hover: hover) and (min-width: 861px) {

@@ -126,9 +126,9 @@ async function copy(text) {
     </button>
   </header>
 
-  <div ref="box" class="ai-msgs">
-    <p v-if="error" class="banner bad" role="alert">{{ error }}</p>
-    <div v-if="!hasProvider" class="ai-empty">
+  <p v-if="error" class="banner bad ai-banner" role="alert">{{ error }}</p>
+  <div v-if="!hasProvider" class="ai-stage">
+    <div class="ai-empty">
       <div class="ai-setup">
         <h2>Подключите свой ИИ</h2>
         <p class="hint">FlammeBible не запускает языковые модели на сервере. Чат работает через ваш ключ OpenAI-совместимого провайдера.</p>
@@ -142,7 +142,9 @@ async function copy(text) {
         </button>
       </div>
     </div>
-    <div v-else-if="!messages.length" class="ai-empty">
+  </div>
+  <div v-else-if="!messages.length" class="ai-stage">
+    <div class="ai-empty">
       <div class="ai-ava big">F</div>
       <h2>Чем помочь в подготовке служения? <img class="twemoji" :src="pray" alt="" /></h2>
       <p class="hint ai-empty-note">ИИ ищет в ваших сборниках и Библии, собирает планы и разбирает песни. Удаление — только с вашим подтверждением.</p>
@@ -153,7 +155,9 @@ async function copy(text) {
         </button>
       </div>
     </div>
-    <div v-else class="ai-col">
+  </div>
+  <div v-else ref="box" class="ai-msgs">
+    <div class="ai-col">
       <article v-for="msg in messages" :key="msg.id || msg.seq" :class="msg.role === 'user' ? 'ai-user' : 'ai-ai'">
         <template v-if="msg.role === 'user'">
           <textarea v-if="editing === msg.seq" v-model="editText" rows="3" @keydown.enter.exact.prevent="saveEdit" />
@@ -203,11 +207,13 @@ async function copy(text) {
     <div class="ai-cbox">
       <textarea v-model="draft" rows="1" :disabled="blocked || streaming" :placeholder="placeholder" @keydown="onKey" />
       <div class="ai-cbar">
+        <button class="ai-ib ai-clip" type="button" disabled title="Фото — скоро" aria-label="Фото — скоро">
+          <AiIcon name="clip" />
+        </button>
         <div class="ai-mp">
           <button class="ai-mp-btn" type="button" :disabled="blocked" @click="menu = !menu">
             <AiIcon name="spark" />
-            <span class="ai-mp-name">{{ picked ? (picked.model.display_name || picked.model.model) : 'Модель не выбрана' }}</span>
-            <span v-if="picked" class="ai-pv">· {{ picked.provider.name }}</span>
+            <span class="ai-mp-name">{{ picked ? (picked.model.display_name || picked.model.model) : 'Модель не выбрана' }}<span v-if="picked" class="ai-pv"> · {{ picked.provider.name }}</span></span>
             <AiIcon name="chevron" />
           </button>
           <button v-if="menu" class="ai-menu-back" type="button" aria-label="Закрыть список моделей" @click="menu = false" />
@@ -242,6 +248,6 @@ async function copy(text) {
         </button>
       </div>
     </div>
-    <div class="ai-under">Enter — отправить, Shift+Enter — новая строка</div>
+    <div class="ai-under"><span>Enter — отправить, Shift+Enter — новая строка</span></div>
   </form>
 </template>
