@@ -48,6 +48,10 @@ func (s *Server) mountMVP(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/songs/text", s.songTextHandler)
 	mux.HandleFunc("GET /api/bible/verse", s.verseTextHandler)
 	mux.HandleFunc("GET /api/bible/semantic", s.searchBibleSemantic)
+	mux.HandleFunc("GET /api/bible/translations", s.bibleTranslations)
+	mux.HandleFunc("GET /api/bible/books", s.bibleBooks)
+	mux.HandleFunc("GET /api/bible/chapter", s.bibleChapterHandler)
+	mux.HandleFunc("GET /api/bible/search", s.searchBibleWords)
 
 	mux.HandleFunc("POST /api/modules", s.createModule)
 	mux.HandleFunc("POST /api/modules/exists", s.bibleModuleExists)
