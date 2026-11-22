@@ -4,43 +4,23 @@ import { useRoute } from 'vue-router'
 import { useSessionStore } from '../stores/session'
 import SongSearch from '../components/SongSearch.vue'
 import SongbookManager from '../components/SongbookManager.vue'
-import ModuleManager from '../components/ModuleManager.vue'
 import PublicCatalog from '../components/PublicCatalog.vue'
-import SpaceFilter from '../../shared/components/SpaceFilter.vue'
+import BookSpaceFilter from '../components/BookSpaceFilter.vue'
 import { aiPlanKey } from '../../shared/ai/results.js'
 import { sitePlanTarget } from '../sitePlan.js'
+import { useBookSpace } from '../bookSpace.js'
 
 const route = useRoute()
 const session = useSessionStore()
 provide(aiPlanKey, sitePlanTarget(session))
 const tab = ref(route.meta.catalog ? 'catalog' : 'search')
-const wantCommunity = ref(false)
-
-const communities = computed(() => session.spaces.filter((space) => space.kind === 'community'))
-const bookSpace = computed(() => {
-  if (wantCommunity.value && !communities.value.length) return 'community'
-  return session.current?.kind === 'community' ? session.currentId : 'personal'
-})
-
-function onBookSpace(value) {
-  if (value === 'community') {
-    wantCommunity.value = true
-    return
-  }
-  wantCommunity.value = false
-  if (value === 'personal') {
-    const personal = session.spaces.find((space) => space.kind === 'personal')
-    if (personal) session.select(personal.id)
-    return
-  }
-  session.select(value)
-}
+const space = useBookSpace(session)
+const bookSpace = space.bookSpace
 
 const tabs = computed(() => {
   const all = [
     { id: 'search', label: 'Поиск' },
     { id: 'books', label: 'Мои сборники' },
-    { id: 'modules', label: 'Модули Библии' },
     { id: 'catalog', label: 'Общий каталог' },
   ]
   return session.token ? all : all.filter((item) => item.id === 'catalog')
@@ -53,20 +33,8 @@ watch(() => route.fullPath, () => {
 </script>
 
 <template>
-  <h1>Сборники и поиск</h1>
-  <SpaceFilter
-    v-if="session.token"
-    :model-value="bookSpace"
-    :communities="communities"
-    :allow-all="false"
-    :allow-all-communities="false"
-    :preferred="session.communityId"
-    @update:model-value="onBookSpace"
-  />
-  <div v-if="bookSpace === 'community'" class="empty-state">
-    <p>Вы пока не состоите в общине.</p>
-    <router-link to="/communities">Создать или вступить в общину</router-link>
-  </div>
+  <h1>Сборники</h1>
+  <BookSpaceFilter v-if="session.token" :space="space" :preferred="session.communityId" />
   <div class="tabs" role="tablist">
     <button
       v-for="item in tabs"
@@ -81,6 +49,5 @@ watch(() => route.fullPath, () => {
   </div>
   <SongSearch v-if="tab === 'search'" :token="session.token" />
   <SongbookManager v-else-if="tab === 'books' && bookSpace !== 'community'" :dimension-id="session.currentId" />
-  <ModuleManager v-else-if="tab === 'modules' && bookSpace !== 'community'" :dimension-id="session.currentId" />
-  <PublicCatalog v-else-if="tab === 'catalog'" :guest="!session.token" @switch="tab = $event" />
+  <PublicCatalog v-else-if="tab === 'catalog'" :guest="!session.token" :show="session.token ? 'songbooks' : 'all'" @switch="tab = $event" />
 </template>

@@ -3,8 +3,10 @@ import { onMounted, ref } from 'vue'
 import { api, explain } from '../api'
 import { statusText } from '../checks'
 
-defineProps({
+const props = defineProps({
   guest: { type: Boolean, default: false },
+  // all — гостевой каталог; songbooks / modules — вкладка страницы «Сборники» или «Библия».
+  show: { type: String, default: 'all' },
 })
 const emit = defineEmits(['switch'])
 
@@ -16,8 +18,8 @@ const loading = ref(true)
 onMounted(async () => {
   try {
     const [songbooks, bible] = await Promise.all([
-      api('/api/catalog/songbooks'),
-      api('/api/catalog/modules'),
+      props.show === 'modules' ? [] : api('/api/catalog/songbooks'),
+      props.show === 'songbooks' ? [] : api('/api/catalog/modules'),
     ])
     books.value = Array.isArray(songbooks) ? songbooks : []
     modules.value = Array.isArray(bible) ? bible : []
@@ -33,9 +35,9 @@ onMounted(async () => {
   <p class="hint">Здесь только то, что уже одобрено и открыто всем. Войти для просмотра не нужно.</p>
   <p v-if="error" class="banner bad" role="alert">{{ error }}</p>
   <p v-else-if="loading" class="empty" role="status">Загрузка…</p>
-  <div v-else class="split">
-    <section>
-      <h2>Сборники</h2>
+  <div v-else :class="{ split: show === 'all' }">
+    <section v-if="show !== 'modules'">
+      <h2 v-if="show === 'all'">Сборники</h2>
       <div v-if="!books.length" class="empty-state">
         <p>Одобренных сборников пока нет.</p>
         <button v-if="!guest" class="btn slim primary" type="button" @click="emit('switch', 'books')">К моим сборникам</button>
@@ -48,8 +50,8 @@ onMounted(async () => {
         </li>
       </ul>
     </section>
-    <section>
-      <h2>Модули Библии</h2>
+    <section v-if="show !== 'songbooks'">
+      <h2 v-if="show === 'all'">Модули Библии</h2>
       <div v-if="!modules.length" class="empty-state">
         <p>Одобренных переводов пока нет.</p>
         <button v-if="!guest" class="btn slim primary" type="button" @click="emit('switch', 'modules')">К моим модулям</button>
