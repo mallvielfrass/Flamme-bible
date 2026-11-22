@@ -42,6 +42,7 @@ var (
 	errAIBusy       = errors.New("Ответ ещё пишется")
 	errAILimit      = errors.New("Слишком много сообщений")
 	errAIModel      = errors.New("Не выбрана модель")
+	errModuleStore  = errors.New("каталог модулей")
 )
 
 type Server struct {
@@ -67,6 +68,8 @@ type Server struct {
 	aiResolve     netguard.Resolver
 	aiRuns        *chatHub
 	aiMsgs        *userLimiter
+	moduleDir     string
+	maxModuleBody int64
 }
 
 type principal struct {
@@ -98,6 +101,23 @@ func (s *Server) SetSessionTTL(d time.Duration) {
 
 func (s *Server) SetTrustProxy(trust bool) {
 	s.trustProxy = trust
+}
+
+func (s *Server) SetModuleDir(dir string) {
+	s.moduleDir = dir
+}
+
+func (s *Server) SetModuleBodyLimit(n int64) {
+	if n > 0 {
+		s.maxModuleBody = n
+	}
+}
+
+func (s *Server) moduleBodyLimit() int64 {
+	if s.maxModuleBody > 0 {
+		return s.maxModuleBody
+	}
+	return maxModuleBody
 }
 
 func (s *Server) Handler() http.Handler {
@@ -259,6 +279,8 @@ func writeMapped(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusBadRequest, errJSON("Не выбрана модель"))
 	case errors.Is(err, errUnmappable):
 		writeJSON(w, http.StatusBadRequest, errJSON("в тексте есть символы, которых нет в windows-1251"))
+	case errors.Is(err, errModuleStore):
+		writeJSON(w, http.StatusServiceUnavailable, errJSON("каталог модулей"))
 	default:
 		log.Printf("server: %v", err)
 		writeJSON(w, http.StatusInternalServerError, errJSON("ошибка"))

@@ -175,6 +175,7 @@ func (s *Server) adminDeleteModule(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
+	s.removeStoredModule(id)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

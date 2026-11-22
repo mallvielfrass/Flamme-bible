@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -48,6 +49,13 @@ func main() {
 		}
 	}
 	api := server.New(pool)
+	if dir := os.Getenv("MEDIA_DIR"); dir != "" {
+		modules := filepath.Join(dir, "bible-modules")
+		if err := os.MkdirAll(modules, 0o750); err != nil {
+			log.Fatal(err)
+		}
+		api.SetModuleDir(modules)
+	}
 	if _, err := secret.LoadKey(); err != nil {
 		if !errors.Is(err, secret.ErrDisabled) {
 			log.Fatal(err)
