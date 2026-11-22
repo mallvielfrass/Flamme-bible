@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1100">
+  <title>FlammeBible — клиент</title>
+  <link rel="stylesheet" href="desktop.css">
+</head>
+<body>
+<div id="login" class="auth-main" hidden>
+  <section class="auth-card">
+    <div class="gold-edge"></div>
+    <div class="auth-brand">
+      <h1>FlammeBible</h1>
+      <p class="subtitle">Песни и служение общины</p>
+    </div>
+    <nav class="auth-switch">
+      <a class="on" href="#l1">Вход</a>
+      <a href="#l1">Регистрация</a>
+    </nav>
+    <form class="auth-form" action="#">
+      <label>Адрес сервера
+        <input value="https://example.com" readonly>
+      </label>
+      <label>Почта
+        <input type="email" value="choir@example.com" autocomplete="username" readonly>
+      </label>
+      <label>Пароль
+        <input type="password" value="password" autocomplete="current-password" readonly>
+      </label>
+      <button class="btn primary" type="button">Войти</button>
+    </form>
+  </section>
+</div>
+
+<div id="app" class="app">
+  <header class="topbar">
+    <a class="brand">FlammeBible</a>
+    <nav>
+      <a id="nav-sync" class="nav-link" href="#s1">Синхронизация</a>
+      <a id="nav-plans" class="nav-link" href="#p1">Планы</a>
+      <a id="nav-updates" class="nav-link" href="#u1">Обновление</a>
+      <div class="nav-end">
+        <span class="who">choir@example.com</span>
+        <button id="gear" class="gear" type="button" aria-label="Настройки" onclick="location.hash='s3'">
+          <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section id="view-sync">
+      <div class="page-head">
+        <div>
+          <h1>Синхронизация</h1>
+          <p class="hint" style="margin:0.15rem 0 0">Папка D:\VisioBible\Modules · пространство «Преображение»</p>
+        </div>
+        <button class="btn slim" type="button">Обновить список</button>
+      </div>
+
+      <div class="sync-body">
+      <div id="banner-server" class="banner ok">
+        <strong>На сервере есть изменения — синхронизируйте.</strong>
+        <p class="hint" style="margin:0.35rem 0 0">Сборник «Молодёжный сборник» ещё не в папке. План «Воскресенье 15.11.2026» изменён на сервере — в VisioBible попадёт после синхронизации.</p>
+      </div>
+      <div id="banner-conflict" class="banner ok" hidden>
+        <strong>На сервере есть изменения — синхронизируйте.</strong>
+        <p class="hint" style="margin:0.35rem 0 0">Песню «Ты моя сокровенная жизнь» изменили и в VisioBible, и на сервере — нужно выбрать версию. Сборник «Молодёжный сборник» на сервере есть, на этом компьютере его ещё нет.</p>
+      </div>
+      <div id="banner-visio" class="banner bad" hidden>
+        <strong>Закройте VisioBible и нажмите «Повторить».</strong>
+        <p class="hint" style="margin:0.35rem 0 0">Пока программа открыта, файлы в папке VisioBible не меняются. Правки на сервере уже отправлены, запись на компьютер ещё не закончена.</p>
+        <button class="btn slim primary" type="button">Повторить</button>
+      </div>
+
+      <div class="stat-chips">
+        <span class="stat-chip">2 отправить</span>
+        <span class="stat-chip">1 получить</span>
+        <span id="chip-add" class="stat-chip ok">1 новый сборник</span>
+        <span id="chip-conflict" class="stat-chip bad" hidden>1 конфликт</span>
+        <span class="stat-chip zero">1 пропущен</span>
+        <span class="stat-chip zero">12 без изменений</span>
+      </div>
+
+      <div class="block">
+        <div class="block-head"><h2>Сборники</h2></div>
+        <div class="entity-list">
+          <article id="row-conflict" class="entity-row" hidden>
+            <div>
+              <p class="entity-title title-serif">Песнь Возрождения</p>
+              <p class="entity-meta">«Ты моя сокровенная жизнь» — изменена здесь и на сервере</p>
+            </div>
+            <span class="action conflict">Нужно выбрать</span>
+            <button class="btn slim" type="button">Сравнить</button>
+          </article>
+          <article id="row-push" class="entity-row">
+            <div>
+              <p class="entity-title title-serif">Песнь Возрождения</p>
+              <p class="entity-meta">2 песни отправятся на сервер · 86 песен в файле</p>
+            </div>
+            <span class="action push">Изменено здесь</span>
+            <span class="choice">из VisioBible</span>
+          </article>
+          <article class="entity-row add">
+            <div>
+              <p class="entity-title title-serif">Молодёжный сборник</p>
+              <p class="entity-meta">14 песен на сервере · в папке VisioBible этого файла ещё нет</p>
+            </div>
+            <span class="action pull">Новое на сервере</span>
+            <div class="entity-actions">
+              <button class="btn slim primary" type="button">Добавить в Modules</button>
+              <button class="btn slim" type="button">Пропустить</button>
+            </div>
+          </article>
+          <article class="entity-row skip">
+            <div>
+              <p class="entity-title title-serif">Детские песни</p>
+              <p class="entity-meta">Группы в .vbm, пока не перезаписывается. Позже свяжем их с разделами сервера.</p>
+            </div>
+            <span class="action skip">Пропущен</span>
+            <span></span>
+          </article>
+        </div>
+      </div>
+
+      <div class="block">
+        <div class="block-head"><h2>Планы</h2></div>
+        <div class="entity-list">
+          <article class="entity-row">
+            <div>
+              <p class="entity-title title-serif">Воскресенье 15.11.2026</p>
+              <p class="entity-meta">Изменён на сервере · в VisioBible пока старая копия</p>
+            </div>
+            <span class="action pull">Изменено на сервере</span>
+            <span class="choice">запишется при синхронизации</span>
+          </article>
+          <article class="entity-row">
+            <div>
+              <p class="entity-title title-serif">Молодёжка 22.11</p>
+              <p class="entity-meta">Файл в VisioBible изменили локально · на сервер уйдёт при синхронизации</p>
+            </div>
+            <span class="action push">Изменено в VisioBible</span>
+            <span></span>
+          </article>
+        </div>
+      </div>
+
+      <p class="hint" style="margin:0.2rem 0 0">Модули Библии (RST+) пока только в обзоре, синхронизации модулей нет.</p>
+      </div>
+
+      <div class="sync-foot">
+        <div class="btn-row">
+          <button id="btn-start" class="btn primary slim" type="button">Начать синхронизацию</button>
+          <p id="start-hint" class="hint" style="margin:0">Сначала выберите: добавить новый сборник в папку или пропустить его.</p>
+        </div>
+        <div id="progress-wrap" hidden>
+          <div class="progress" role="progressbar" aria-valuenow="45" aria-valuemin="0" aria-valuemax="100"><span style="width:45%"></span></div>
+          <p class="progress-label">Запись на компьютер: Песнь Возрождения — 45%</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-plans" hidden>
+      <div class="page-head">
+        <h1>Планы</h1>
+        <div class="btn-row">
+          <button class="btn slim" type="button">
+            <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
+            Импортировать план
+          </button>
+          <button class="btn slim primary" type="button">
+            <svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            Создать план
+          </button>
+        </div>
+      </div>
+      <p class="hint">Правки сохраняются на сервере, как на сайте. В папку VisioBible их записывает только вкладка «Синхронизация».</p>
+      <div class="tabs" role="tablist">
+        <button class="tab" type="button">Все</button>
+        <button class="tab" type="button">Личные</button>
+        <button class="tab on" type="button">Общинные · Преображение</button>
+      </div>
+      <div class="plan-list">
+        <article class="card plan-card open">
+          <div class="plan-card-head">
+            <svg class="chevron open" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            <h2 class="plan-title title-serif">Воскресенье 15.11.2026</h2>
+            <span class="badge">Преображение</span>
+            <span class="plan-meta">4 пункта</span>
+            <span class="plan-meta">изменён сегодня, 09:40</span>
+            <div class="plan-card-icons">
+              <button class="icon-btn" type="button" data-tip="Скачать план" aria-label="Скачать план"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></button>
+              <button class="icon-btn" type="button" data-tip="Дополнить пунктами из другого плана" aria-label="Дополнить пунктами из другого плана"><svg viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/></svg></button>
+              <button class="icon-btn" type="button" data-tip="Дублировать план" aria-label="Дублировать план"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
+              <button class="icon-btn red" type="button" data-tip="Удалить план" aria-label="Удалить план"><svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
+            </div>
+          </div>
+          <div class="plan-card-body">
+            <div class="place-line">
+              <p class="hint">Есть в VisioBible · файл обновится при синхронизации</p>
+              <span class="badge">Есть на сервере</span>
+            </div>
+            <label>Название
+              <input value="Воскресенье 15.11.2026">
+            </label>
+            <div class="points-head">
+              <h2>Пункты</h2>
+              <button class="icon-btn round" type="button" data-tip="Добавить пункт" aria-label="Добавить пункт" onclick="location.hash='p2'"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+            </div>
+            <ol class="items">
+              <li>
+                <div class="item-row">
+                  <span class="num">1</span>
+                  <span class="badge">Песня</span>
+                  <button class="icon-btn green small" type="button" disabled aria-label="Выше"><svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg></button>
+                  <button class="icon-btn green small" type="button" aria-label="Ниже"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+                  <button class="icon-btn small" type="button" aria-label="Изменить пункт"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+                  <button class="icon-btn red small" type="button" aria-label="Убрать пункт"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+                </div>
+                <strong class="title-serif">Ты мой Бог</strong>
+                <p class="item-sub">Песнь Возрождения · Хвала</p>
+              </li>
+              <li>
+                <div class="item-row">
+                  <span class="num">2</span>
+                  <span class="badge">Стих</span>
+                  <button class="icon-btn green small" type="button" aria-label="Выше"><svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg></button>
+                  <button class="icon-btn green small" type="button" aria-label="Ниже"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+                  <button class="icon-btn small" type="button" aria-label="Изменить пункт"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+                  <button class="icon-btn red small" type="button" aria-label="Убрать пункт"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+                </div>
+                <strong class="title-serif">Ин. 3:16</strong>
+                <p class="item-sub">RST+</p>
+                <p class="quote">Ибо так возлюбил Бог мир, что отдал Сына Своего Единородного…</p>
+              </li>
+              <li>
+                <div class="item-row">
+                  <span class="num">3</span>
+                  <span class="badge">Текст</span>
+                  <button class="icon-btn green small" type="button" aria-label="Выше"><svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg></button>
+                  <button class="icon-btn green small" type="button" disabled aria-label="Ниже"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+                  <button class="icon-btn small" type="button" aria-label="Изменить пункт"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+                  <button class="icon-btn red small" type="button" aria-label="Убрать пункт"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+                </div>
+                <strong class="title-serif">Объявление</strong>
+                <p class="quote">После собрания — чай в малом зале.</p>
+              </li>
+            </ol>
+          </div>
+        </article>
+        <article class="card plan-card">
+          <div class="plan-card-head">
+            <svg class="chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            <h2 class="plan-title title-serif">Репетиция хора</h2>
+            <span class="badge">Преображение</span>
+            <span class="plan-meta">6 пунктов</span>
+            <span class="plan-meta">только на сервере</span>
+            <div class="plan-card-icons">
+              <button class="icon-btn" type="button" data-tip="Скачать план" aria-label="Скачать план"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></button>
+              <button class="icon-btn" type="button" data-tip="Дублировать план" aria-label="Дублировать план"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
+              <button class="icon-btn red" type="button" data-tip="Удалить план" aria-label="Удалить план"><svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="view-updates" hidden>
+      <div class="page-head"><h1>Обновление программы</h1></div>
+      <p class="hint">Сейчас установлена версия 0.1.0. Файл обновления проверяется по SHA-256 и сохраняется в папку загрузок; программу им нужно заменить вручную.</p>
+      <section class="card">
+        <p class="badge" style="background:var(--navy);border-color:transparent;color:#fff">Есть новая версия</p>
+        <h2 style="margin:0.45rem 0 0.35rem">0.2.0</h2>
+        <p class="hint">Исправлена кнопка синхронизации после выбора конфликта и порядок песен с сервера.</p>
+        <div class="download-row">
+          <div>
+            <strong>Windows</strong>
+            <p class="hint" style="margin:0">Эта система · 18 МБ</p>
+            <p class="mono">SHA-256 2c4f8a91b0d3e7f6a1c0b9e8d7c6b5a4…</p>
+          </div>
+          <button class="btn slim primary" type="button">Скачать и проверить</button>
+        </div>
+        <p class="hint">После проверки закройте программу и замените её сохранённым файлом.</p>
+      </section>
+    </section>
+  </main>
+</div>
+
+<div id="modal-settings" class="modal-back" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <header class="modal-head"><h2 id="settings-title">Настройки</h2></header>
+    <div class="modal-body">
+      <div class="path-row">
+        <label>Папка VisioBible, файл VisioBible.ini или каталог Modules
+          <input value="D:\VisioBible\Modules" readonly>
+        </label>
+        <button class="btn slim" type="button">Выбрать</button>
+      </div>
+      <p class="hint">Найдено: 4 сборника, 1 модуль Библии, 3 плана.</p>
+      <label>Адрес сервера
+        <input value="https://example.com" readonly>
+      </label>
+      <label>Кодировка записи планов в VisioBible
+        <select>
+          <option>UTF-8</option>
+          <option>Windows-1251</option>
+        </select>
+      </label>
+      <p class="hint">Кодировка действует только когда синхронизация записывает файлы в папку VisioBible.</p>
+      <label>Пространство для синхронизации
+        <select>
+          <option>Личное</option>
+          <option selected>Преображение</option>
+        </select>
+      </label>
+      <p class="hint">Вы вошли как choir@example.com.</p>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn slim danger" type="button">Выйти</button>
+      <button class="btn slim" type="button">Отмена</button>
+      <button class="btn slim primary" type="button">Сохранить</button>
+    </footer>
+  </div>
+</div>
+
+<div id="modal-conflict" class="modal-back" hidden>
+  <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="conflict-title">
+    <header class="modal-head"><h2 id="conflict-title">Ты моя сокровенная жизнь</h2></header>
+    <div class="modal-body conflict">
+      <p class="hint">Выберите, какой текст оставить. Обе версии останутся, если сохранить их как разные песни.</p>
+      <div class="split">
+        <article>
+          <p class="who">В VisioBible</p>
+          <strong class="title-serif">Ты моя сокровенная жизнь</strong>
+          <pre class="lyric">Ты — покой среди бурных вод.
+Я пою Тебе, Господь,
+И сердце моё ликует.</pre>
+        </article>
+        <article>
+          <p class="who">На сервере</p>
+          <strong class="title-serif">Ты моя сокровенная жизнь</strong>
+          <pre class="lyric">Ты — покой среди бурных вод.
+Я пою Тебе, Господь,
+Пусть слава Твоя пребудет.</pre>
+        </article>
+      </div>
+      <div class="btn-row" style="margin-top:0.8rem">
+        <button class="btn slim primary" type="button">Оставить мою версию</button>
+        <button class="btn slim primary" type="button">Взять с сервера</button>
+        <button class="btn slim gold" type="button">Сохранить обе как разные песни</button>
+      </div>
+      <h3 style="margin:0.9rem 0 0.3rem;font-size:1.05rem">Исправить текст вручную</h3>
+      <div class="fields">
+        <label class="wide">Название<input value="Ты моя сокровенная жизнь"></label>
+        <label class="wide">Текст<textarea rows="3">Ты моя сокровенная жизнь,
+Ты — покой среди бурных вод.</textarea></label>
+      </div>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn slim" type="button">Отмена</button>
+      <button class="btn slim primary" type="button">Сохранить этот текст</button>
+    </footer>
+  </div>
+</div>
+
+<div id="modal-item" class="modal-back" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="item-title">
+    <header class="modal-head"><h2 id="item-title">Добавить пункт</h2></header>
+    <div class="modal-body">
+      <div class="tabs" role="tablist">
+        <button class="tab on" type="button">Песня</button>
+        <button class="tab" type="button">Стих из Библии</button>
+        <button class="tab" type="button">Текст</button>
+      </div>
+      <div class="search-bar">
+        <input value="благодать" readonly>
+        <span class="picker">
+          <svg viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 7h8M8 11h5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+          Песнь Возрождения
+        </span>
+        <button class="btn slim" type="button">Найти</button>
+      </div>
+      <p class="hint" style="margin-top:0.35rem">Фильтр: Песнь Возрождения · Хвала и поклонение</p>
+      <ul class="results">
+        <li>
+          <div>
+            <b class="title-serif">Благодать Твоя безмерна</b>
+            <p class="hint">Песнь Возрождения · Хвала и поклонение</p>
+          </div>
+          <button class="btn slim" type="button">Добавить</button>
+        </li>
+        <li>
+          <div>
+            <b class="title-serif">О благодать, спасён тобой</b>
+            <p class="hint">Песнь Возрождения · Хвала и поклонение</p>
+          </div>
+          <button class="btn slim" type="button">Добавить</button>
+        </li>
+      </ul>
+      <label>Название в плане
+        <input placeholder="По умолчанию — название песни">
+      </label>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn slim" type="button">Закрыть</button>
+      <button class="btn slim primary" type="button">Добавить</button>
+    </footer>
+  </div>
+</div>
+
+<div id="modal-close" class="modal-back" hidden>
+  <div class="modal confirm" role="dialog" aria-modal="true" aria-labelledby="close-title">
+    <header class="modal-head"><h2 id="close-title">Есть несинхронизированные изменения</h2></header>
+    <div class="modal-body">
+      <p class="confirm-text">На сервере есть правки, которые ещё не записаны в VisioBible, и изменения из папки, которые ещё не отправлены. Если закрыть программу сейчас, они никуда не денутся, но папка VisioBible останется как есть.</p>
+    </div>
+    <footer class="modal-foot stack">
+      <button class="btn slim" type="button">Отмена</button>
+      <button class="btn slim" type="button">Закрыть без синхронизации</button>
+      <button class="btn slim primary" type="button">Синхронизировать</button>
+    </footer>
+  </div>
+</div>
+
+<script>
+function apply() {
+  const id = (location.hash || "#s1").slice(1) || "s1";
+  const isLogin = id === "l1";
+  const tab = id === "p1" || id === "p2" ? "plans" : id === "u1" ? "updates" : "sync";
+  document.getElementById("login").hidden = !isLogin;
+  document.getElementById("app").hidden = isLogin;
+  document.getElementById("view-sync").hidden = tab !== "sync";
+  document.getElementById("view-plans").hidden = tab !== "plans";
+  document.getElementById("view-updates").hidden = tab !== "updates";
+  document.getElementById("nav-sync").classList.toggle("on", tab === "sync");
+  document.getElementById("nav-plans").classList.toggle("on", tab === "plans");
+  document.getElementById("nav-updates").classList.toggle("on", tab === "updates");
+  document.getElementById("gear").classList.toggle("on", id === "s3");
+  document.getElementById("modal-settings").hidden = id !== "s3";
+  document.getElementById("modal-conflict").hidden = id !== "s2";
+  document.getElementById("modal-item").hidden = id !== "p2";
+  document.getElementById("modal-close").hidden = id !== "c1";
+
+  const blocked = id === "s4";
+  const conflict = id === "s2";
+  document.getElementById("banner-server").hidden = !(id === "s1" || id === "s3" || id === "c1");
+  document.getElementById("banner-conflict").hidden = !conflict;
+  document.getElementById("banner-visio").hidden = !blocked;
+  document.getElementById("chip-conflict").hidden = !conflict;
+  document.getElementById("row-conflict").hidden = !conflict;
+  document.getElementById("row-push").hidden = conflict;
+  const needChoice = id === "s1" || id === "s3" || id === "c1";
+  document.getElementById("btn-start").disabled = conflict || blocked || needChoice;
+  document.getElementById("btn-start").hidden = blocked;
+  document.getElementById("start-hint").hidden = !needChoice || blocked;
+  document.getElementById("progress-wrap").hidden = !blocked;
+}
+window.addEventListener("hashchange", apply);
+apply();
+</script>
+</body>
+</html>
