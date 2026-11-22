@@ -5,7 +5,9 @@ import { useAiStore } from "../../../web/shared/ai/store.js";
 import { aiPlanKey } from "../../../web/shared/ai/results.js";
 import { planTarget } from "../../../web/src/planItems.js";
 import { plansApi } from "../plans/api";
-import type { Plan, PlanItem } from "../plans/model";
+import { createDimension } from "../plans/model";
+import { plansSpace } from "../plans/space";
+import type { Community, Plan, PlanItem } from "../plans/model";
 import { desktopFetch } from "../aiFetch";
 import { AiSettingsModal, AiWorkspace } from "../shared";
 
@@ -16,6 +18,8 @@ const ai = useAiStore();
 const client = props.loggedIn ? createAiApi({ fetch: desktopFetch }) : null;
 if (client) ai.useApi(client);
 
+let communities: Community[] = [];
+
 provide(
   aiPlanKey,
   planTarget({
@@ -25,7 +29,12 @@ provide(
       const result = await plansApi.save(plan);
       if (result.conflict) throw new Error("План только что изменили. Откройте его во вкладке «Планы» и попробуйте снова.");
     },
-    create: (title: string, items: PlanItem[]) => plansApi.create(title, "", items),
+    places: async () => {
+      communities = (await plansApi.communities()) || [];
+      return communities.map((item) => ({ id: item.id, name: item.name || "Община" }));
+    },
+    defaultPlace: () => createDimension(plansSpace.value, communities.map((item) => item.id)),
+    create: (title: string, items: PlanItem[], dimensionId: string) => plansApi.create(title, dimensionId, items),
   }),
 );
 

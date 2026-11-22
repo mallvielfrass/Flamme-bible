@@ -34,10 +34,14 @@ provide(aiPlanKey, planTarget({
     token: session.token,
     body: { title: plan.title, version: plan.version, updated_at: plan.updated_at || undefined, items: plan.items },
   }),
-  create: (title, items) => api('/api/plans', {
+  places: async () => session.spaces
+    .filter((space) => space.kind === 'community')
+    .map((space) => ({ id: space.id, name: space.name || 'Община' })),
+  defaultPlace: () => (session.current?.kind === 'community' ? session.current.id : ''),
+  create: (title, items, dimensionId) => api('/api/plans', {
     method: 'POST',
     token: session.token,
-    body: { title, dimension_id: '', items },
+    body: { title, dimension_id: dimensionId, items },
   }),
 }))
 

@@ -9,6 +9,7 @@ import DownloadModal from "./DownloadModal.vue";
 import FileModal from "./FileModal.vue";
 import ItemModal from "./ItemModal.vue";
 import PlanCard from "./PlanCard.vue";
+import { plansSpace } from "./space";
 import {
   appendItems,
   badgeFor,
@@ -45,7 +46,7 @@ function viewText(item: PlanItem) {
 const plans = ref<Plan[]>([]);
 const communities = ref<Community[]>([]);
 const locals = ref<LocalMark[]>([]);
-const space = ref("all");
+const space = plansSpace;
 const openId = ref("");
 const editor = ref<Plan | null>(null);
 const savedSnap = ref("");

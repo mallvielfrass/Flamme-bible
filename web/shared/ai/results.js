@@ -6,7 +6,9 @@ export const aiResultKey = Symbol('aiResult')
  * @typedef {Object} AiPlanTarget
  * @property {() => Promise<{ id: string, title: string }[]>} list
  * @property {(planId: string, item: AiResult) => Promise<void>} add
- * @property {(title: string, item: AiResult) => Promise<void>} create
+ * @property {() => Promise<{ id: string, name: string }[]>} places общины, куда можно сохранить новый план
+ * @property {() => string} defaultPlace id общины по умолчанию, '' — личное
+ * @property {(title: string, item: AiResult, dimensionId: string) => Promise<void>} create
  */
 export const aiPlanKey = Symbol('aiPlan')
 

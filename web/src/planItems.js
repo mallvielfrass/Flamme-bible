@@ -232,10 +232,14 @@ export function itemStamp(item, now = new Date()) {
 }
 
 // Куда чат кладёт пункт «В план». io — запросы сайта или клиента:
-// list() → планы, read(id) → план с items, save(plan) → сохранить items, create(title, items).
+// list() → планы, read(id) → план с items, save(plan) → сохранить items,
+// places() → общины { id, name }, defaultPlace() → id общины или '' (личное),
+// create(title, items, dimensionId).
 export function planTarget(io) {
   return {
     list: io.list,
+    places: io.places,
+    defaultPlace: io.defaultPlace,
     async add(planId, result) {
       const plan = await io.read(planId)
       const before = plan.items || []
@@ -243,8 +247,8 @@ export function planTarget(io) {
       if (items.length === before.length) throw new Error('Эта песня уже есть в плане.')
       await io.save({ ...plan, items })
     },
-    async create(title, result) {
-      await io.create(title, [planItemFromResult(result)])
+    async create(title, result, dimensionId = '') {
+      await io.create(title, [planItemFromResult(result)], dimensionId)
     },
   }
 }

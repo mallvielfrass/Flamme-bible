@@ -135,13 +135,14 @@ describe('plan items from chat results', () => {
       list: async () => [{ id: 'p1', title: 'Воскресенье' }],
       read: async () => ({ id: 'p1', title: 'Воскресенье', version: 2, items: [] }),
       save: async (plan) => { saved = plan },
-      create: async (title, items) => { created.push({ title, items }) },
+      create: async (title, items, dimensionId) => { created.push({ title, items, dimensionId }) },
     })
     await target.add('p1', { kind: 'song', id: 'dim/book-1/fb-1', title: 'Песня', note: '' })
     expect(saved.version).toBe(2)
     expect(saved.items.map((item) => item.song_id)).toEqual(['fb-1'])
-    await target.create('Новый', { kind: 'song', id: 'dim/book-1/fb-1', title: 'Песня', note: '' })
+    await target.create('Новый', { kind: 'song', id: 'dim/book-1/fb-1', title: 'Песня', note: '' }, 'community-1')
     expect(created[0].title).toBe('Новый')
+    expect(created[0].dimensionId).toBe('community-1')
     expect(created[0].items).toHaveLength(1)
 
     const full = planTarget({ read: async () => ({ id: 'p1', items: [song] }), save: async () => {} })
