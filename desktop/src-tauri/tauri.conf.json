@@ -17,7 +17,8 @@
         "title": "FlammeBible",
         "width": 1100,
         "height": 800,
-        "resizable": true
+        "resizable": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {

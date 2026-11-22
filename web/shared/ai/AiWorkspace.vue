@@ -55,7 +55,7 @@ async function newChat() {
   }
 }
 
-async function submit(text) {
+async function submit(text, images = []) {
   ai.error = ''
   let id = props.chatId
   try {
@@ -65,7 +65,7 @@ async function submit(text) {
       skip = id
       emit('open-chat', id)
     }
-    await ai.send(id, text, { model_id: ai.modelId })
+    await ai.send(id, text, { model_id: ai.modelId, images })
   } catch (err) {
     ai.error = explain(err)
   }
@@ -149,6 +149,7 @@ function onOpenSettings() {
         :messages="ai.messages"
         :providers="ai.providers"
         :model-id="ai.modelId"
+        :vision-model-id="ai.tasks.vision || ''"
         :streaming="ai.streaming"
         :has-provider="ai.hasProvider"
         :chat-off="ai.chatOff"

@@ -19,10 +19,14 @@ var ruMonth = [...]string{
 	"июля", "августа", "сентября", "октября", "ноября", "декабря",
 }
 
-// Turn — уже сохранённая реплика чата.
+// Turn — уже сохранённая реплика чата. Images — data: URL картинок,
+// только у нового вопроса: в истории картинки не хранятся. Note — пометка
+// для модели (например, о картинках), она идёт после текста реплики.
 type Turn struct {
 	Role    string
 	Content string
+	Note    string
+	Images  []string
 }
 
 // SystemPrompt говорит, кто отвечает, какая сегодня дата,
@@ -69,7 +73,11 @@ func History(now time.Time, turns []Turn) []provider.Message {
 		if turn.Role != "user" && turn.Role != "assistant" {
 			continue
 		}
-		out = append(out, provider.Message{Role: turn.Role, Content: turn.Content})
+		msg := provider.Message{Role: turn.Role, Content: turn.Content + turn.Note}
+		if turn.Role == "user" {
+			msg.Images = turn.Images
+		}
+		out = append(out, msg)
 	}
 	return out
 }
@@ -81,7 +89,7 @@ func tail(turns []Turn) []Turn {
 		if turns[i].Role != "user" && turns[i].Role != "assistant" {
 			continue
 		}
-		n := utf8.RuneCountInString(turns[i].Content)
+		n := utf8.RuneCountInString(turns[i].Content) + utf8.RuneCountInString(turns[i].Note)
 		if start != len(turns) && total+n > historyLimit {
 			break
 		}
@@ -99,7 +107,10 @@ const toolsHint = "\nДля песен, сборников, мест Писан�
 	"plan_id бери из list_plans, song_ref — из search_songs, passage_ref — из search_bible, номера пунктов n — из get_plan. " +
 	"Если пользователь просит изменить план, делай это сразу, без лишних вопросов. " +
 	"Переспрашивай, только если непонятно, какой план или какую песню он имеет в виду. " +
-	"Удалить план целиком ты не можешь. После изменения коротко скажи, что сделал."
+	"Удалить план целиком ты не можешь. После изменения коротко скажи, что сделал.\n" +
+	"Если в изображении или в распознанном с него тексте есть песни, выпиши названия и первые строки " +
+	"и для каждой вызови search_songs. Потом перечисли найденные (название и сборник) и отдельно — не найденные. " +
+	"Про ненайденную песню скажи прямо и предложи показать распознанный текст. В план добавляй, только если об этом просят."
 
 // Tools — инструменты для одного ответа. Run выполняет вызов и возвращает
 // текст для модели (обычно JSON). Ошибку инструмент тоже пишет в этот текст.
@@ -206,4 +217,26 @@ func clip(s string, n int) string {
 		r = r[:n]
 	}
 	return strings.TrimSpace(string(r))
+}
+
+const readImagesPrompt = "Перепиши текст с изображений как есть, без пояснений. " +
+	"Если это песни, порядок служения или список песен, для каждой песни дай название (или номер) и первые строки, по одной песне на абзац. " +
+	"Ничего не придумывай: неразборчивое помечай [неразборчиво]. Если текста нет, одной фразой скажи, что изображено."
+
+// ReadImages просит модель с поддержкой фото переписать текст с картинок.
+// Нужна, когда модель чата фото не читает, а в настройках ИИ выбрана модель для фото.
+func ReadImages(ctx context.Context, client *provider.Client, model string, images []string) (string, provider.Usage, error) {
+	var buf strings.Builder
+	reply, err := client.Chat(ctx, provider.ChatRequest{
+		Model: model,
+		Messages: []provider.Message{
+			{Role: "system", Content: readImagesPrompt},
+			{Role: "user", Content: "Изображения:", Images: images},
+		},
+		MaxTokens: 4000,
+	}, func(delta string) error {
+		buf.WriteString(delta)
+		return nil
+	})
+	return strings.TrimSpace(buf.String()), reply.Usage, err
 }

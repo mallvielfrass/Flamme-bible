@@ -4,6 +4,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -14,6 +15,7 @@ func TestNginxLetsLargeBodiesThrough(t *testing.T) {
 		"/api/admin/releases":   maxReleaseBody,
 		"/api/modules/upload":   maxModuleBody,
 		"/api/admin/embed/gguf": defaultGGUFMax,
+		"^~ /api/ai/":           maxAIMessageBody,
 	}
 	for _, file := range []string{"../../web/nginx.conf", "../../deploy/nginx/flammebible.conf.example"} {
 		raw, err := os.ReadFile(file)
@@ -31,7 +33,11 @@ func TestNginxLetsLargeBodiesThrough(t *testing.T) {
 
 func nginxBodyLimit(t *testing.T, conf, route string) int64 {
 	t.Helper()
-	re := regexp.MustCompile(`location = ` + regexp.QuoteMeta(route) + ` \{[^}]*client_max_body_size (\d+)m;`)
+	prefix := "= "
+	if strings.HasPrefix(route, "^~ ") {
+		prefix = ""
+	}
+	re := regexp.MustCompile(`location ` + regexp.QuoteMeta(prefix+route) + ` \{[^}]*client_max_body_size (\d+)m;`)
 	m := re.FindStringSubmatch(conf)
 	if m == nil {
 		return 0

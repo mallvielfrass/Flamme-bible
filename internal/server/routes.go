@@ -117,8 +117,8 @@ func (s *Server) mountMVP(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/admin/ai", s.adminPutAI)
 }
 
-// JSON-маршруты остаются на maxBody. Бинарник релиза больше этого предела,
-// поэтому для одного фиксированного пути лимит отдельный.
+// JSON-маршруты остаются на maxBody. Релиз, модуль, GGUF и вопрос чата
+// с картинками больше этого предела, поэтому у их путей лимит свой.
 func (s *Server) dispatch(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		limit := int64(maxBody)
@@ -130,6 +130,9 @@ func (s *Server) dispatch(next http.Handler) http.Handler {
 		}
 		if r.Method == http.MethodPost && r.URL.Path == "/api/modules/upload" {
 			limit = s.moduleBodyLimit()
+		}
+		if r.Method == http.MethodPost && isAIMessagePath(r.URL.Path) {
+			limit = maxAIMessageBody
 		}
 		http.MaxBytesHandler(next, limit).ServeHTTP(w, r)
 	})

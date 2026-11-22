@@ -100,11 +100,43 @@ var ErrSilent = errors.New("провайдер молчит")
 
 // Message — одна реплика для /chat/completions.
 // Ответ модели с вызовами несёт ToolCalls, ответ инструмента — ToolCallID.
+// Images — data: URL картинок. С ними content уходит списком частей
+// (text и image_url), как ждут OpenAI-совместимые модели с поддержкой фото.
 type Message struct {
 	Role       string     `json:"role"`
 	Content    string     `json:"content"`
+	Images     []string   `json:"-"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+type contentPart struct {
+	Type     string    `json:"type"`
+	Text     string    `json:"text,omitempty"`
+	ImageURL *imageURL `json:"image_url,omitempty"`
+}
+
+type imageURL struct {
+	URL string `json:"url"`
+}
+
+// MarshalJSON пишет content строкой, а при картинках — списком частей.
+func (m Message) MarshalJSON() ([]byte, error) {
+	type plain Message
+	if len(m.Images) == 0 {
+		return json.Marshal(plain(m))
+	}
+	parts := make([]contentPart, 0, len(m.Images)+1)
+	if m.Content != "" {
+		parts = append(parts, contentPart{Type: "text", Text: m.Content})
+	}
+	for _, url := range m.Images {
+		parts = append(parts, contentPart{Type: "image_url", ImageURL: &imageURL{URL: url}})
+	}
+	return json.Marshal(struct {
+		plain
+		Content []contentPart `json:"content"`
+	}{plain(m), parts})
 }
 
 // Tool — описание функции в формате OpenAI: {"type":"function","function":{…}}.

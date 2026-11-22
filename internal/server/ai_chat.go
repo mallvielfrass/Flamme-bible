@@ -31,24 +31,26 @@ type aiChatView struct {
 }
 
 type aiMsgView struct {
-	ID               string    `json:"id"`
-	Seq              int       `json:"seq"`
-	Role             string    `json:"role"`
-	Content          string    `json:"content"`
-	Model            string    `json:"model"`
-	Status           string    `json:"status"`
-	PromptTokens     *int      `json:"prompt_tokens,omitempty"`
-	CompletionTokens *int      `json:"completion_tokens,omitempty"`
-	Cards            []aiCard  `json:"cards,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
+	ID               string     `json:"id"`
+	Seq              int        `json:"seq"`
+	Role             string     `json:"role"`
+	Content          string     `json:"content"`
+	Model            string     `json:"model"`
+	Status           string     `json:"status"`
+	PromptTokens     *int       `json:"prompt_tokens,omitempty"`
+	CompletionTokens *int       `json:"completion_tokens,omitempty"`
+	Cards            []aiCard   `json:"cards,omitempty"`
+	Images           *imageMeta `json:"images,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
 }
 
 type chatModel struct {
-	ID       string
-	Name     string
-	BaseURL  string
-	Token    string
-	CanTools bool
+	ID        string
+	Name      string
+	BaseURL   string
+	Token     string
+	CanTools  bool
+	CanVision bool
 }
 
 // Один ответ на чат и два на пользователя. Иначе второй запрос получает 409.
@@ -200,13 +202,13 @@ func (s *Server) resolveChatModel(ctx context.Context, userID, prefer, chatModel
 		return chatModel{}, errRequest
 	}
 	var name, providerID string
-	var canTools bool
+	var canTools, canVision bool
 	err := s.db.QueryRow(ctx, `
-		SELECT m.model, p.id::text, m.can_tools
+		SELECT m.model, p.id::text, m.can_tools, m.can_vision
 		FROM ai_models m
 		JOIN ai_providers p ON p.id = m.provider_id
 		WHERE m.id = $1 AND p.user_id = $2
-	`, id, userID).Scan(&name, &providerID, &canTools)
+	`, id, userID).Scan(&name, &providerID, &canTools, &canVision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return chatModel{}, errNotFound
 	}
@@ -217,7 +219,7 @@ func (s *Server) resolveChatModel(ctx context.Context, userID, prefer, chatModel
 	if err != nil {
 		return chatModel{}, err
 	}
-	return chatModel{ID: id, Name: name, BaseURL: base, Token: token, CanTools: canTools}, nil
+	return chatModel{ID: id, Name: name, BaseURL: base, Token: token, CanTools: canTools, CanVision: canVision}, nil
 }
 
 func (s *Server) titleModel(ctx context.Context, userID string, chat chatModel) chatModel {
@@ -252,7 +254,7 @@ func (s *Server) loadAIChat(ctx context.Context, userID, id string) (aiChatView,
 
 func (s *Server) loadAIMessages(ctx context.Context, chatID string) ([]aiMsgView, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT id::text, seq, role, content, model, status, prompt_tokens, completion_tokens, cards, created_at
+		SELECT id::text, seq, role, content, model, status, prompt_tokens, completion_tokens, cards, images, created_at
 		FROM ai_messages
 		WHERE chat_id = $1
 		ORDER BY seq
@@ -264,10 +266,11 @@ func (s *Server) loadAIMessages(ctx context.Context, chatID string) ([]aiMsgView
 	list := []aiMsgView{}
 	for rows.Next() {
 		var msg aiMsgView
-		var cards []byte
-		if err := rows.Scan(&msg.ID, &msg.Seq, &msg.Role, &msg.Content, &msg.Model, &msg.Status, &msg.PromptTokens, &msg.CompletionTokens, &cards, &msg.CreatedAt); err != nil {
+		var cards, images []byte
+		if err := rows.Scan(&msg.ID, &msg.Seq, &msg.Role, &msg.Content, &msg.Model, &msg.Status, &msg.PromptTokens, &msg.CompletionTokens, &cards, &images, &msg.CreatedAt); err != nil {
 			return nil, err
 		}
+		msg.Images = parseImageMeta(images)
 		if len(cards) > 0 && json.Unmarshal(cards, &msg.Cards) != nil {
 			msg.Cards = nil
 		}
@@ -506,15 +509,27 @@ func (s *Server) postAIMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Text    string `json:"text"`
-		ModelID string `json:"model_id"`
-		FromSeq *int   `json:"from_seq"`
+		Text    string   `json:"text"`
+		ModelID string   `json:"model_id"`
+		FromSeq *int     `json:"from_seq"`
+		Images  []string `json:"images"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeMapped(w, errRequest)
 		return
 	}
 	text := strings.TrimSpace(body.Text)
+	var images *imageMeta
+	if len(body.Images) > 0 {
+		if err := checkChatImages(body.Images); err != nil {
+			writeMapped(w, err)
+			return
+		}
+		if text == "" {
+			text = defaultImageAsk
+		}
+		images = &imageMeta{Count: len(body.Images)}
+	}
 	if body.FromSeq == nil && text == "" {
 		writeMapped(w, errRequest)
 		return
@@ -533,6 +548,13 @@ func (s *Server) postAIMessage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeMapped(w, err)
 		return
+	}
+	var reader chatModel
+	if images != nil {
+		if reader, err = s.imageReader(ctx, p.UserID, model); err != nil {
+			writeMapped(w, err)
+			return
+		}
 	}
 	settings, err := s.loadAISettings(ctx)
 	if err != nil {
@@ -556,7 +578,7 @@ func (s *Server) postAIMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	assistantID, turns, title, err := s.prepareTurn(ctx, p.UserID, chatID, text, model.ID, model.Name, body.FromSeq)
+	assistantID, turns, title, err := s.prepareTurn(ctx, p.UserID, chatID, text, images, model.ID, model.Name, body.FromSeq)
 	if err != nil {
 		writeMapped(w, err)
 		return
@@ -577,12 +599,32 @@ func (s *Server) postAIMessage(w http.ResponseWriter, r *http.Request) {
 		s.finishAnswer(ctx, assistantID, "", model.Name, "stopped", provider.Usage{}, nil)
 		return
 	}
+	var readUsage provider.Usage
+	if images != nil {
+		// Новый вопрос — последняя реплика. Модель с «фото» получает сами картинки,
+		// иначе — текст, который с них прочитала модель задачи «Фото».
+		last := &turns[len(turns)-1]
+		if reader.ID == model.ID {
+			last.Note, last.Images = "", body.Images
+		} else {
+			read, u, err := s.readImages(runCtx, reader, assistantID, body.Images, send)
+			readUsage = u
+			if err != nil {
+				s.finishAnswer(ctx, assistantID, "", model.Name, "error", readUsage, nil)
+				_ = send("error", map[string]string{"error": "Не получилось прочитать изображения: " + chatErrorText(err)})
+				_ = send("done", map[string]any{"message_id": assistantID, "stopped": false})
+				return
+			}
+			last.Note = imageNote(&imageMeta{Count: len(body.Images), Text: read})
+		}
+	}
 	var buf strings.Builder
 	var cards []aiCard
 	usage, runErr := agent.Run(runCtx, s.chatClient(model.BaseURL, model.Token), model.Name, turns, time.Now(), s.chatTools(p.UserID, model, settings, send, &cards), func(delta string) error {
 		buf.WriteString(delta)
 		return send("delta", map[string]string{"text": delta})
 	})
+	usage = addReadUsage(usage, readUsage)
 	status := "done"
 	stopped := false
 	errText := ""
@@ -718,7 +760,9 @@ func (s *Server) finishAnswer(ctx context.Context, id, content, model, status st
 	}
 }
 
-func (s *Server) prepareTurn(ctx context.Context, userID, chatID, text, modelID, modelName string, fromSeq *int) (string, []agent.Turn, string, error) {
+// prepareTurn пишет вопрос и пустой ответ и читает историю. images — пометка
+// о картинках вопроса; в истории она дописывается к тексту реплики.
+func (s *Server) prepareTurn(ctx context.Context, userID, chatID, text string, images *imageMeta, modelID, modelName string, fromSeq *int) (string, []agent.Turn, string, error) {
 	if fromSeq != nil && *fromSeq < 1 {
 		return "", nil, "", errRequest
 	}
@@ -754,10 +798,18 @@ func (s *Server) prepareTurn(ctx context.Context, userID, chatID, text, modelID,
 		}
 	} else {
 		maxSeq++
+		var meta any
+		if images != nil {
+			raw, err := json.Marshal(images)
+			if err != nil {
+				return "", nil, "", err
+			}
+			meta = raw
+		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO ai_messages (id, chat_id, seq, role, content)
-			VALUES ($1, $2, $3, 'user', $4)
-		`, uuid.NewString(), chatID, maxSeq, text); err != nil {
+			INSERT INTO ai_messages (id, chat_id, seq, role, content, images)
+			VALUES ($1, $2, $3, 'user', $4, $5)
+		`, uuid.NewString(), chatID, maxSeq, text, meta); err != nil {
 			return "", nil, "", err
 		}
 	}
@@ -774,7 +826,7 @@ func (s *Server) prepareTurn(ctx context.Context, userID, chatID, text, modelID,
 		return "", nil, "", err
 	}
 	rows, err := tx.Query(ctx, `
-		SELECT role, content FROM ai_messages
+		SELECT role, content, images FROM ai_messages
 		WHERE chat_id = $1 AND id <> $2
 		ORDER BY seq
 	`, chatID, assistantID)
@@ -784,10 +836,12 @@ func (s *Server) prepareTurn(ctx context.Context, userID, chatID, text, modelID,
 	turns := []agent.Turn{}
 	for rows.Next() {
 		var turn agent.Turn
-		if err := rows.Scan(&turn.Role, &turn.Content); err != nil {
+		var meta []byte
+		if err := rows.Scan(&turn.Role, &turn.Content, &meta); err != nil {
 			rows.Close()
 			return "", nil, "", err
 		}
+		turn.Note = imageNote(parseImageMeta(meta))
 		turns = append(turns, turn)
 	}
 	err = rows.Err()
@@ -811,4 +865,14 @@ func writeSSE(w http.ResponseWriter, flusher http.Flusher, event string, payload
 	}
 	flusher.Flush()
 	return nil
+}
+
+func addReadUsage(total, read provider.Usage) provider.Usage {
+	if !read.Reported {
+		return total
+	}
+	total.PromptTokens += read.PromptTokens
+	total.CompletionTokens += read.CompletionTokens
+	total.Reported = true
+	return total
 }

@@ -273,3 +273,40 @@ func TestChatTools(t *testing.T) {
 		t.Fatalf("второй вызов %+v", second)
 	}
 }
+
+func TestMessageImagesAsParts(t *testing.T) {
+	raw, err := json.Marshal(Message{Role: "user", Content: "Что за песни?", Images: []string{"data:image/jpeg;base64,AAAA", "data:image/png;base64,BBBB"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Role    string `json:"role"`
+		Content []struct {
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			ImageURL struct {
+				URL string `json:"url"`
+			} `json:"image_url"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("%v: %s", err, raw)
+	}
+	if got.Role != "user" || len(got.Content) != 3 {
+		t.Fatalf("части: %s", raw)
+	}
+	if got.Content[0].Type != "text" || got.Content[0].Text != "Что за песни?" {
+		t.Fatalf("текст: %s", raw)
+	}
+	if got.Content[1].Type != "image_url" || got.Content[1].ImageURL.URL != "data:image/jpeg;base64,AAAA" || got.Content[2].ImageURL.URL != "data:image/png;base64,BBBB" {
+		t.Fatalf("картинки: %s", raw)
+	}
+
+	raw, err = json.Marshal(Message{Role: "assistant", Content: "ок"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != `{"role":"assistant","content":"ок"}` {
+		t.Fatalf("без картинок content — строка: %s", raw)
+	}
+}

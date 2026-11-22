@@ -22,6 +22,7 @@ import { mergeCards, songFromHit } from './songbooks.js'
  * @property {string} [status]
  * @property {number} [prompt_tokens]
  * @property {number} [completion_tokens]
+ * @property {{ count: number, text?: string, previews?: string[] }} [images]
  */
 
 /** @type {ReturnType<typeof createAi> | null} */
@@ -133,7 +134,7 @@ function createAi() {
   /**
    * @param {string} id
    * @param {string} text
-   * @param {{ model_id?: string, from_seq?: number }} [extra]
+   * @param {{ model_id?: string, from_seq?: number, images?: string[] }} [extra]
    */
   async function send(id, text, extra = {}) {
     streaming.value = true
@@ -144,10 +145,15 @@ function createAi() {
     const payload = { text: text || '' }
     if (extra.model_id) payload.model_id = extra.model_id
     if (extra.from_seq) payload.from_seq = extra.from_seq
+    const images = extra.images || []
+    if (images.length) payload.images = images
     if (extra.from_seq) messages.value = messages.value.filter((item) => item.seq < extra.from_seq)
-    if (text) {
+    if (text || images.length) {
       const seq = extra.from_seq || ((messages.value.at(-1)?.seq || 0) + 1)
-      messages.value = [...messages.value, { id: 'local-user', seq, role: 'user', content: text, status: 'done' }]
+      const local = { id: 'local-user', seq, role: 'user', content: text, status: 'done' }
+      // Превью живут только до перезагрузки чата: сервер картинки не хранит.
+      if (images.length) local.images = { count: images.length, previews: images }
+      messages.value = [...messages.value, local]
     }
     let assistant = null
     try {
