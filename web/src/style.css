@@ -940,7 +940,31 @@ details.menu {
   padding: 0.9rem 1.1rem;
 }
 
+.modal.wide { width: min(52rem, 100%); }
+
 .modal-head h2 { margin: 0; font-size: 1.35rem; }
+
+.ai-settings .card { margin: 0.75rem 0; }
+.ai-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.45rem; }
+.ai-actions .btn { width: auto; margin-top: 0; }
+.ai-actions input { flex: 1 1 12rem; width: auto; min-width: 0; }
+.ai-url { overflow-wrap: anywhere; margin: 0.15rem 0 0.35rem; }
+.ai-model {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--line);
+}
+.ai-checks { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; }
+.ai-remote { max-height: 12rem; overflow: auto; margin: 0.3rem 0; }
+.inline-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.2rem 0;
+}
+.inline-check input { width: auto; }
 
 .modal-body { padding: 0 1.1rem 1rem; }
 

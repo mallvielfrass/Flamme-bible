@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, apiForm, ApiError, explain } from './api'
+import { api, apiForm, ApiError, explain, setApiBase } from './api'
 
 function json(data, status = 200) {
   return {
@@ -11,6 +11,7 @@ function json(data, status = 200) {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  setApiBase('')
 })
 
 describe('api', () => {
@@ -75,6 +76,18 @@ describe('api', () => {
     expect(data.release.version).toBe('1.0.0')
     expect(seen.header).toEqual({ name: 'Authorization', value: 'Bearer t' })
     expect(steps).toEqual([[1, 2]])
+  })
+
+  it('prefixes an injected base url', async () => {
+    setApiBase('https://example.com/')
+    let seen
+    vi.stubGlobal('fetch', async (path) => {
+      seen = path
+      return json({ ok: true })
+    })
+    await api('/api/ai/providers', { token: 'abc' })
+    expect(seen).toBe('https://example.com/api/ai/providers')
+    expect(explain('ИИ не настроен')).toBe('ИИ не настроен. Администратор не задал ключ на сервере.')
   })
 
   it('reports a lost connection', async () => {

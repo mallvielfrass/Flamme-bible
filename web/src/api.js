@@ -6,8 +6,21 @@ export class ApiError extends Error {
   }
 }
 
+let apiBase = ''
+
+export function setApiBase(url) {
+  apiBase = String(url || '').replace(/\/$/, '')
+}
+
+export function apiURL(path) {
+  if (!apiBase || typeof path !== 'string' || !path.startsWith('/')) return path
+  return apiBase + path
+}
+
 const known = {
   запрос: 'Проверьте заполненные поля.',
+  имя: 'Провайдер с таким именем уже есть.',
+  'ИИ не настроен': 'ИИ не настроен. Администратор не задал ключ на сервере.',
   запрещено: 'Это действие доступно администратору.',
   'не найдено': 'Не найдено. Проверьте ссылку или код приглашения.',
   'не авторизован': 'Нужно войти снова.',
@@ -33,7 +46,7 @@ export function explain(error) {
 async function send(path, { method = 'GET', token, headers, body } = {}) {
   let response
   try {
-    response = await fetch(path, { method, headers, body })
+    response = await fetch(apiURL(path), { method, headers, body })
   } catch {
     throw new ApiError(0, 'Нет связи с сервером.')
   }
@@ -77,7 +90,7 @@ export function apiForm(path, { method = 'POST', form, token, onProgress } = {})
 function sendForm(path, { method, form, token, onProgress }) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open(method, path)
+    xhr.open(method, apiURL(path))
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(event.loaded, event.total)
