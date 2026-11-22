@@ -31,3 +31,41 @@ CREATE TABLE IF NOT EXISTS ai_task_models (
   model_id uuid NOT NULL REFERENCES ai_models (id) ON DELETE CASCADE,
   PRIMARY KEY (user_id, task)
 );
+
+-- Чаты хранятся постоянно: срока жизни у сообщений нет.
+CREATE TABLE IF NOT EXISTS ai_chats (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  title text NOT NULL DEFAULT '',
+  model_id uuid REFERENCES ai_models (id) ON DELETE SET NULL,
+  pinned boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ai_chats_user_list ON ai_chats (user_id, pinned DESC, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS ai_messages (
+  id uuid PRIMARY KEY,
+  chat_id uuid NOT NULL REFERENCES ai_chats (id) ON DELETE CASCADE,
+  seq int NOT NULL,
+  role text NOT NULL CHECK (role IN ('user', 'assistant', 'tool')),
+  content text NOT NULL DEFAULT '',
+  tool_calls jsonb,
+  tool_call_id text,
+  cards jsonb,
+  images jsonb,
+  model text NOT NULL DEFAULT '',
+  status text NOT NULL DEFAULT 'done' CHECK (status IN ('done', 'stopped', 'error')),
+  prompt_tokens int,
+  completion_tokens int,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (chat_id, seq)
+);
+
+INSERT INTO app_settings (key, value) VALUES
+  ('ai_enabled', 'true'),
+  ('ai_msg_per_10min', '0'),
+  ('ai_msg_per_day', '0'),
+  ('ai_max_tool_calls', '8')
+ON CONFLICT (key) DO NOTHING;

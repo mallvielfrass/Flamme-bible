@@ -100,6 +100,17 @@ func (s *Server) mountMVP(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/ai/providers/{id}/remote-models", s.remoteAIModels)
 	mux.HandleFunc("PUT /api/ai/providers/{id}/models", s.putAIModels)
 	mux.HandleFunc("PUT /api/ai/tasks", s.putAITasks)
+
+	mux.HandleFunc("GET /api/ai/chats", s.listAIChats)
+	mux.HandleFunc("POST /api/ai/chats", s.createAIChat)
+	mux.HandleFunc("GET /api/ai/chats/{id}", s.getAIChat)
+	mux.HandleFunc("PATCH /api/ai/chats/{id}", s.patchAIChat)
+	mux.HandleFunc("DELETE /api/ai/chats/{id}", s.deleteAIChat)
+	mux.HandleFunc("POST /api/ai/chats/{id}/messages", s.postAIMessage)
+	mux.HandleFunc("POST /api/ai/chats/{id}/stop", s.stopAIChat)
+
+	mux.HandleFunc("GET /api/admin/ai", s.adminAI)
+	mux.HandleFunc("PUT /api/admin/ai", s.adminPutAI)
 }
 
 // JSON-маршруты остаются на maxBody. Бинарник релиза больше этого предела,
