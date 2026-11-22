@@ -447,6 +447,80 @@ pub fn write_new_plan(
     Ok(path)
 }
 
+pub fn export_text(format: &str, title: &str, items: &[PlanItem]) -> Result<String, String> {
+    let format = match format.trim().to_ascii_lowercase().as_str() {
+        "json" => "json",
+        "history" => "history",
+        "plandef" | "plan_def" | "ini" => "plandef",
+        "vplt" => "vplt",
+        _ => return Err("Неизвестный формат".into()),
+    };
+    let text_value = match format {
+        "json" => serde_json::to_string_pretty(&serde_json::json!({
+            "title": title,
+            "items": items,
+        }))
+        .map_err(|err| err.to_string())?,
+        "history" => write_history(items)?,
+        "plandef" => write_plan_def(&PlanDef {
+            name: title.to_string(),
+            items: items.to_vec(),
+            ..PlanDef::default()
+        }),
+        _ => write_vplt(items)?,
+    };
+    if format == "json" || format == "plandef" {
+        return Ok(text_value);
+    }
+    let bytes = plan_file_bytes(&text_value, format, "utf-8")?;
+    String::from_utf8(bytes).map_err(|err| err.to_string())
+}
+
+pub fn plan_path_allowed(plans_dir: &Path, file: &Path) -> bool {
+    if !file.is_file() {
+        return false;
+    }
+    let Some(name) = file.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    if !is_plan_filename(name) {
+        return false;
+    }
+    let Ok(root) = plans_dir.canonicalize() else {
+        return false;
+    };
+    let Ok(target) = file.canonicalize() else {
+        return false;
+    };
+    target.starts_with(root)
+}
+
+pub fn path_under(root: &Path, file: &Path) -> bool {
+    let Ok(root) = root.canonicalize() else {
+        return false;
+    };
+    let anchor = if file.exists() {
+        file.to_path_buf()
+    } else {
+        match file.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+            _ => return false,
+        }
+    };
+    let Ok(anchor) = anchor.canonicalize() else {
+        return false;
+    };
+    anchor.starts_with(root)
+}
+
+fn is_plan_filename(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.ends_with(".vplt")
+        || name == "history.ini"
+        || name == "plandef.ini"
+        || name.ends_with(".plandef.ini")
+}
+
 pub fn file_stem(name: &str) -> String {
     let mut out = String::new();
     for ch in name.chars() {
@@ -938,6 +1012,46 @@ mod tests {
     fn decode_mojibake(text: &str) -> String {
         let (bytes, _, _) = WINDOWS_1252.decode(text.as_bytes());
         bytes.into_owned()
+    }
+
+    #[test]
+    fn export_text_covers_the_four_formats_and_delete_stays_inside_plans() {
+        let dir = crate::paths::TmpDir::new("plan-export");
+        let plans = dir.path.join("Plans");
+        fs::create_dir_all(&plans).unwrap();
+        let file = plans.join("Sunday.vplt");
+        fs::write(&file, "x").unwrap();
+        assert!(plan_path_allowed(&plans, &file));
+        assert!(path_under(&dir.path, &file));
+        assert!(path_under(&dir.path, &plans.join("new.vplt")));
+        let outside = dir.path.join("note.txt");
+        fs::write(&outside, "x").unwrap();
+        assert!(!plan_path_allowed(&plans, &outside));
+        assert!(!path_under(&plans, &outside));
+        let history = plans.join("History.ini");
+        fs::write(&history, "x").unwrap();
+        assert!(plan_path_allowed(&plans, &history));
+        let def = plans.join("Week.plandef.ini");
+        fs::write(&def, "x").unwrap();
+        assert!(plan_path_allowed(&plans, &def));
+        let song = plans.join("song.vbm");
+        fs::write(&song, "x").unwrap();
+        assert!(!plan_path_allowed(&plans, &song));
+        let other = crate::paths::TmpDir::new("plan-other");
+        assert!(!path_under(&plans, &other.path.join("missing.vplt")));
+
+        let items = vec![bible(), slide()];
+        let json = export_text("json", "Воскресенье", &items).unwrap();
+        assert!(json.contains("\"title\": \"Воскресенье\""));
+        assert!(json.contains("\"kind\": \"bible\""));
+        let vplt = export_text("vplt", "Воскресенье", &items).unwrap();
+        assert!(vplt.contains("encoding=\"UTF-8\""));
+        assert!(!vplt.contains("ModuleShortName"));
+        let history_text = export_text("history", "Воскресенье", &items).unwrap();
+        assert!(history_text.contains("Book=\"43\""));
+        let def_text = export_text("plandef", "Воскресенье", &items).unwrap();
+        assert!(def_text.contains("Title=Воскресенье"));
+        assert!(export_text("nope", "Воскресенье", &items).is_err());
     }
 
     #[test]

@@ -9,7 +9,7 @@ mod text;
 mod updater;
 mod visio;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tauri::Emitter;
 use uuid::Uuid;
@@ -619,6 +619,7 @@ fn create_plan(name: String, items: Vec<PlanItem>) -> Result<visio::PlanInfo, St
     if name.is_empty() {
         return Err("Укажите название плана".into());
     }
+    ensure_visiobible_closed()?;
     let path = plans::write_new_plan(
         Path::new(&scan.plans_dir),
         &name,
@@ -657,6 +658,7 @@ fn repair_plan_encoding(path: String) -> Result<visio::Scan, String> {
     }
     let file = Path::new(&path);
     let bytes = plans::repaired_utf8(file)?;
+    ensure_visiobible_closed()?;
     visio::replace_file(file, &bytes)?;
     visio::open_location(Path::new(&cfg.visio_path))
 }
@@ -668,6 +670,212 @@ async fn list_communities() -> Result<Vec<remote::Dimension>, String> {
     Remote::new(&cfg.server_url, &cfg.token)?
         .communities()
         .await
+}
+
+#[tauri::command]
+async fn list_plans() -> Result<Vec<plans::RemotePlan>, String> {
+    let (_, cfg) = load_config()?;
+    require_login(&cfg)?;
+    Remote::new(&cfg.server_url, &cfg.token)?
+        .plans("all")
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[derive(serde::Serialize)]
+struct PlanLink {
+    path: String,
+    server_id: String,
+    dimension_id: String,
+    version: i64,
+    updated_at: String,
+}
+
+#[tauri::command]
+fn plan_links() -> Result<Vec<PlanLink>, String> {
+    let (_, cfg) = load_config()?;
+    Ok(cfg
+        .plans
+        .iter()
+        .map(|(path, bind)| PlanLink {
+            path: path.clone(),
+            server_id: bind.server_id.clone(),
+            dimension_id: bind.dimension_id.clone(),
+            version: bind.version,
+            updated_at: bind.updated_at.clone(),
+        })
+        .collect())
+}
+
+#[tauri::command]
+fn read_plan_file(path: String) -> Result<String, String> {
+    let file = Path::new(&path);
+    if !file.is_file() {
+        return Err("Файл не найден".into());
+    }
+    plans::load_text(file).map(|loaded| loaded.text)
+}
+
+#[tauri::command]
+fn render_plan_export(
+    format: String,
+    title: String,
+    items: Vec<PlanItem>,
+) -> Result<String, String> {
+    plans::export_text(&format, title.trim(), &items)
+}
+
+#[tauri::command]
+fn write_plan_export(path: String, contents: String) -> Result<(), String> {
+    let file = Path::new(&path);
+    if path.trim().is_empty() || file.file_name().is_none() {
+        return Err("Укажите файл".into());
+    }
+    guard_export_path(file)?;
+    if let Some(parent) = file.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+        }
+    }
+    std::fs::write(file, contents).map_err(|err| err.to_string())
+}
+
+fn guard_export_path(file: &Path) -> Result<(), String> {
+    let (_, cfg) = load_config()?;
+    if cfg.visio_path.is_empty() {
+        return Ok(());
+    }
+    let scan = match visio::open_location(Path::new(&cfg.visio_path)) {
+        Ok(scan) => scan,
+        Err(_) => return ensure_visiobible_closed(),
+    };
+    if scan.needs_choice {
+        return ensure_visiobible_closed();
+    }
+    let in_root = !scan.root.is_empty() && plans::path_under(Path::new(&scan.root), file);
+    let in_plans =
+        !scan.plans_dir.is_empty() && plans::path_under(Path::new(&scan.plans_dir), file);
+    if in_root || in_plans {
+        ensure_visiobible_closed()?;
+    }
+    Ok(())
+}
+
+fn opened_plans() -> Result<(PathBuf, config::Config, visio::Scan), String> {
+    let (dir, cfg) = load_config()?;
+    if cfg.visio_path.is_empty() {
+        return Err("Сначала выберите папку VisioBible".into());
+    }
+    let scan = visio::open_location(Path::new(&cfg.visio_path))?;
+    if scan.needs_choice || scan.plans_dir.is_empty() {
+        return Err("Сначала выберите одну папку VisioBible".into());
+    }
+    Ok((dir, cfg, scan))
+}
+
+fn plan_keys(cfg: &config::Config, file: &Path) -> Vec<String> {
+    let shown = file.display().to_string();
+    let target = file.canonicalize().ok();
+    cfg.plans
+        .keys()
+        .filter(|key| {
+            *key == &shown
+                || Path::new(key.as_str()) == file
+                || target.as_ref().is_some_and(|target| {
+                    Path::new(key.as_str()).canonicalize().ok().as_ref() == Some(target)
+                })
+        })
+        .cloned()
+        .collect()
+}
+
+#[tauri::command]
+fn delete_local_plan(path: String) -> Result<visio::Scan, String> {
+    ensure_visiobible_closed()?;
+    let (dir, mut cfg, scan) = opened_plans()?;
+    let file = Path::new(&path);
+    let keys = plan_keys(&cfg, file);
+    if file.is_file() {
+        if !plans::plan_path_allowed(Path::new(&scan.plans_dir), file) {
+            return Err("Этот файл не является планом".into());
+        }
+        std::fs::remove_file(file).map_err(|err| err.to_string())?;
+    } else if keys.is_empty() {
+        return Err("План не найден".into());
+    }
+    for key in keys {
+        cfg.plans.remove(&key);
+    }
+    config::save(&dir, &cfg)?;
+    visio::open_location(Path::new(&cfg.visio_path))
+}
+
+#[tauri::command]
+fn store_pulled_plan(plan: plans::RemotePlan) -> Result<visio::Scan, String> {
+    ensure_visiobible_closed()?;
+    let (dir, mut cfg, scan) = opened_plans()?;
+    let server_id = plan.id.trim().to_string();
+    if server_id.is_empty() {
+        return Err("У плана нет номера на сервере".into());
+    }
+    let bound = cfg
+        .plans
+        .iter()
+        .find(|(_, bind)| bind.server_id == server_id)
+        .map(|(path, _)| path.clone());
+    if plan.deleted {
+        if let Some(path) = bound {
+            let file = PathBuf::from(&path);
+            if file.is_file() {
+                if !plans::plan_path_allowed(Path::new(&scan.plans_dir), &file) {
+                    return Err("Этот файл не является планом".into());
+                }
+                std::fs::remove_file(&file).map_err(|err| err.to_string())?;
+            }
+            cfg.plans.remove(&path);
+            config::save(&dir, &cfg)?;
+        }
+        return visio::open_location(Path::new(&cfg.visio_path));
+    }
+    let title = {
+        let trimmed = plan.title.trim();
+        if trimmed.is_empty() {
+            "План".to_string()
+        } else {
+            trimmed.to_string()
+        }
+    };
+    let path = if let Some(path) = bound {
+        plans::write_items(Path::new(&path), &plan.items, &title, &cfg.plan_encoding)?;
+        path
+    } else {
+        plans::write_new_plan(
+            Path::new(&scan.plans_dir),
+            &title,
+            &plan.items,
+            &cfg.plan_encoding,
+        )?
+        .display()
+        .to_string()
+    };
+    let dimension_id = plan.dimension_id.clone().unwrap_or_default();
+    cfg.plans.insert(
+        path,
+        config::PlanBind {
+            server_id,
+            dimension_id: dimension_id.clone(),
+            version: plan.version,
+            updated_at: plan.updated_at.clone(),
+            scope: if dimension_id.is_empty() {
+                "personal".into()
+            } else {
+                "community".into()
+            },
+            items: plan.items,
+        },
+    );
+    config::save(&dir, &cfg)?;
+    visio::open_location(Path::new(&cfg.visio_path))
 }
 
 #[tauri::command]
@@ -791,6 +999,13 @@ pub fn run() {
             set_plan_encoding,
             repair_plan_encoding,
             list_communities,
+            list_plans,
+            plan_links,
+            read_plan_file,
+            render_plan_export,
+            write_plan_export,
+            delete_local_plan,
+            store_pulled_plan,
             pull_plan,
             delete_plan,
             import_plan,
