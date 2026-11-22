@@ -231,64 +231,15 @@ func (s *Server) listPlans(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
-	scope := r.URL.Query().Get("scope")
-	if scope == "" {
-		scope = "all"
-	}
-	dimID := r.URL.Query().Get("dimension_id")
 	ctx := r.Context()
-	q := `
-		SELECT id::text FROM plans
-		WHERE NOT deleted AND `
-	var args []any
-	switch {
-	case dimID != "":
-		if _, err := uuid.Parse(dimID); err != nil {
-			writeMapped(w, errNotFound)
-			return
-		}
-		if _, err := s.membership(ctx, p.UserID, dimID); err != nil {
-			writeMapped(w, err)
-			return
-		}
-		q += `dimension_id = $1`
-		args = append(args, dimID)
-	case scope == "personal":
-		q += `owner_user_id = $1`
-		args = append(args, p.UserID)
-	case scope == "community":
-		q += `dimension_id IN (SELECT dimension_id FROM memberships WHERE user_id = $1 AND NOT excluded)`
-		args = append(args, p.UserID)
-	case scope == "all":
-		q += `(owner_user_id = $1 OR dimension_id IN (SELECT dimension_id FROM memberships WHERE user_id = $1 AND NOT excluded))`
-		args = append(args, p.UserID)
-	default:
-		writeMapped(w, errRequest)
-		return
-	}
-	q += ` ORDER BY updated_at DESC, id`
-	rows, err := s.db.Query(ctx, q, args...)
+	ids, err := s.planIDs(ctx, p.UserID, r.URL.Query().Get("scope"), r.URL.Query().Get("dimension_id"))
 	if err != nil {
-		writeMapped(w, err)
-		return
-	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			writeMapped(w, err)
-			return
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
 		writeMapped(w, err)
 		return
 	}
 	list := []planView{}
 	for _, id := range ids {
-		view, err := loadPlan(ctx, s.db, id)
+		view, err := s.readPlan(ctx, p.UserID, id)
 		if err != nil {
 			writeMapped(w, err)
 			return
@@ -296,6 +247,56 @@ func (s *Server) listPlans(w http.ResponseWriter, r *http.Request) {
 		list = append(list, view)
 	}
 	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *Server) planIDs(ctx context.Context, userID, scope, dimID string) ([]string, error) {
+	if scope == "" {
+		scope = "all"
+	}
+	q := `
+		SELECT id::text FROM plans
+		WHERE NOT deleted AND `
+	var args []any
+	switch {
+	case dimID != "":
+		if _, err := uuid.Parse(dimID); err != nil {
+			return nil, errNotFound
+		}
+		if _, err := s.membership(ctx, userID, dimID); err != nil {
+			return nil, err
+		}
+		q += `dimension_id = $1`
+		args = append(args, dimID)
+	case scope == "personal":
+		q += `owner_user_id = $1`
+		args = append(args, userID)
+	case scope == "community":
+		q += `dimension_id IN (SELECT dimension_id FROM memberships WHERE user_id = $1 AND NOT excluded)`
+		args = append(args, userID)
+	case scope == "all":
+		q += `(owner_user_id = $1 OR dimension_id IN (SELECT dimension_id FROM memberships WHERE user_id = $1 AND NOT excluded))`
+		args = append(args, userID)
+	default:
+		return nil, errRequest
+	}
+	q += ` ORDER BY updated_at DESC, id`
+	rows, err := s.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 func (s *Server) getPlan(w http.ResponseWriter, r *http.Request) {
