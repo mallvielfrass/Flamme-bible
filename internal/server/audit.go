@@ -12,10 +12,14 @@ import (
 )
 
 func writeAudit(ctx context.Context, tx pgx.Tx, actor, action, kind, id, title, note string) error {
+	var actorID any
+	if strings.TrimSpace(actor) != "" {
+		actorID = actor
+	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO admin_audit (id, actor_id, action, target_kind, target_id, target_title, note)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, uuid.NewString(), actor, action, kind, id, title, note)
+	`, uuid.NewString(), actorID, action, kind, id, title, note)
 	return err
 }
 

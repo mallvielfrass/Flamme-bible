@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -272,4 +274,77 @@ func downloadRelease(t *testing.T, srv *httptest.Server, path string) (int, []by
 		t.Fatal(err)
 	}
 	return res.StatusCode, raw, res.Header.Get("X-Content-SHA256")
+}
+
+func TestStoreReleaseFromFiles(t *testing.T) {
+	src := t.TempDir()
+	root := t.TempDir()
+	t.Setenv("RELEASES_DIR", root)
+	reset(t)
+	linux := filepath.Join(src, "linux.bin")
+	windows := filepath.Join(src, "windows.exe")
+	if err := os.WriteFile(linux, []byte("linux-binary"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(windows, []byte("windows-binary"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	_, _, err := StoreReleaseFiles(ctx, testPool, "", "../1.0.0", "", map[string]string{"linux": linux}, nil)
+	if err != errRequest {
+		t.Fatalf("путь в версии: %v", err)
+	}
+	_, _, err = StoreReleaseFiles(ctx, testPool, "", "1.0.0", "", map[string]string{"linux": filepath.Join(src, "нет")}, nil)
+	if err == nil || !strings.Contains(err.Error(), "нет файла") {
+		t.Fatalf("отсутствующий файл: %v", err)
+	}
+	bad := map[string]string{"linux": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+	_, _, err = StoreReleaseFiles(ctx, testPool, "", "1.0.0", "", map[string]string{"linux": linux}, bad)
+	if err != errRequest {
+		t.Fatalf("чужой хеш: %v", err)
+	}
+	rel, created, err := StoreReleaseFiles(ctx, testPool, "", "1.0.0", "заметки", map[string]string{
+		"linux": linux, "windows": windows,
+	}, map[string]string{"linux": shaHex([]byte("linux-binary"))})
+	if err != nil || !created || rel.Status != "dev" || rel.Notes != "заметки" {
+		t.Fatalf("загрузка created=%v rel=%+v err=%v", created, rel, err)
+	}
+	_, err = PublishRelease(ctx, testPool, "", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = StoreReleaseFiles(ctx, testPool, "", "1.0.0", "", map[string]string{"linux": linux}, nil)
+	if err != errConflict {
+		t.Fatalf("перезапись выпущенного: %v", err)
+	}
+	rel, created, err = StoreReleaseFiles(ctx, testPool, "", "1.1.0", "", map[string]string{"linux": linux}, nil)
+	if err != nil || !created {
+		t.Fatalf("черновик без windows: created=%v err=%v", created, err)
+	}
+	_, err = PublishRelease(ctx, testPool, "", "1.1.0")
+	if err != errConflict {
+		t.Fatalf("публикация без windows: %v", err)
+	}
+	rel, created, err = StoreReleaseFiles(ctx, testPool, "", "1.1.0", "ещё", map[string]string{"windows": windows}, nil)
+	if err != nil || created {
+		t.Fatalf("дозагрузка created=%v err=%v", created, err)
+	}
+	rel, err = PublishRelease(ctx, testPool, "", "1.1.0")
+	if err != nil || rel.Status != "released" {
+		t.Fatalf("публикация %+v err=%v", rel, err)
+	}
+	var actor *string
+	var action string
+	if err := testPool.QueryRow(ctx, `
+		SELECT actor_id::text, action FROM admin_audit WHERE action = 'release_publish' AND target_id = '1.1.0'
+	`).Scan(&actor, &action); err != nil {
+		t.Fatal(err)
+	}
+	if actor != nil || action != "release_publish" {
+		t.Fatalf("журнал actor=%v action=%s", actor, action)
+	}
+	active, err := activeVersion(ctx, testPool)
+	if err != nil || active != "1.1.0" {
+		t.Fatalf("активная %s err=%v", active, err)
+	}
 }

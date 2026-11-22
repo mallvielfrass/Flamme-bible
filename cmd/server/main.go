@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -17,6 +18,25 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "release":
+			os.Exit(runRelease(os.Args[2:]))
+		case "help", "-h", "--help":
+			printServerUsage()
+			return
+		}
+	}
+	serve()
+}
+
+func printServerUsage() {
+	fmt.Fprintln(os.Stderr, "использование: flammebible-server")
+	fmt.Fprintln(os.Stderr, "             flammebible-server release add [флаги]")
+	fmt.Fprintln(os.Stderr, "без аргументов запускается HTTP-сервер")
+}
+
+func serve() {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("нужен DATABASE_URL")

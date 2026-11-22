@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -39,6 +39,19 @@ type clientRelease struct {
 	PublishedAt   *time.Time `json:"published_at"`
 }
 
+func ReleaseOpError(err error) string {
+	switch {
+	case errors.Is(err, errConflict):
+		return "версия уже выпущена или для публикации не хватает файлов linux и windows"
+	case errors.Is(err, errRequest):
+		return "неверные параметры, версия или файлы"
+	case errors.Is(err, errNotFound):
+		return "версия не найдена"
+	default:
+		return err.Error()
+	}
+}
+
 func validReleaseVersion(version string) bool {
 	if strings.Contains(version, "..") || strings.ContainsAny(version, `/\`) {
 		return false
@@ -59,14 +72,15 @@ func artifactName(platform string) (string, error) {
 	}
 }
 
+type releasePart struct {
+	platform string
+	file     io.Reader
+	expect   string
+}
+
 func (s *Server) uploadRelease(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireAdmin(w, r)
 	if !ok {
-		return
-	}
-	root, err := releaseRoot()
-	if err != nil {
-		writeMapped(w, err)
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxReleaseBody)
@@ -81,20 +95,7 @@ func (s *Server) uploadRelease(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.MultipartForm.RemoveAll()
 	version := strings.TrimSpace(r.FormValue("version"))
-	if !validReleaseVersion(version) {
-		writeMapped(w, errRequest)
-		return
-	}
 	notes := strings.TrimSpace(r.FormValue("notes"))
-	if len(notes) > 4000 {
-		writeMapped(w, errRequest)
-		return
-	}
-	type incoming struct {
-		platform string
-		file     multipart.File
-		expect   string
-	}
 	fields := []struct {
 		platform string
 		field    string
@@ -104,10 +105,11 @@ func (s *Server) uploadRelease(w http.ResponseWriter, r *http.Request) {
 		{"windows", "windows_file", "windows_sha256"},
 		{"macos", "macos_file", "macos_sha256"},
 	}
-	var present []incoming
+	var present []releasePart
+	var opened []io.Closer
 	defer func() {
-		for _, item := range present {
-			item.file.Close()
+		for _, file := range opened {
+			file.Close()
 		}
 	}()
 	for _, field := range fields {
@@ -119,49 +121,11 @@ func (s *Server) uploadRelease(w http.ResponseWriter, r *http.Request) {
 			writeMapped(w, errRequest)
 			return
 		}
-		present = append(present, incoming{platform: field.platform, file: file, expect: r.FormValue(field.sumField)})
+		opened = append(opened, file)
+		present = append(present, releasePart{platform: field.platform, file: file, expect: r.FormValue(field.sumField)})
 	}
-	if len(present) == 0 {
-		writeMapped(w, errRequest)
-		return
-	}
-	ctx := r.Context()
-	tx, err := s.db.Begin(ctx)
+	rel, created, err := storeRelease(r.Context(), s.db, p.UserID, version, notes, present)
 	if err != nil {
-		writeMapped(w, err)
-		return
-	}
-	defer tx.Rollback(ctx)
-	created, err := lockDevRelease(ctx, tx, version, notes)
-	if err != nil {
-		writeMapped(w, err)
-		return
-	}
-	sums := map[string]string{}
-	sizes := map[string]int64{}
-	for _, part := range present {
-		sum, size, err := writeArtifact(root, version, part.platform, part.file, part.expect)
-		if err != nil {
-			writeMapped(w, err)
-			return
-		}
-		sums[part.platform] = sum
-		sizes[part.platform] = size
-	}
-	if err := updateReleaseFiles(ctx, tx, version, notes, sums, sizes); err != nil {
-		writeMapped(w, err)
-		return
-	}
-	rel, err := loadRelease(ctx, tx, version)
-	if err != nil {
-		writeMapped(w, err)
-		return
-	}
-	if err := writeAudit(ctx, tx, p.UserID, "release_upload", "release", version, version, notes); err != nil {
-		writeMapped(w, err)
-		return
-	}
-	if err := tx.Commit(ctx); err != nil {
 		writeMapped(w, err)
 		return
 	}
@@ -170,6 +134,87 @@ func (s *Server) uploadRelease(w http.ResponseWriter, r *http.Request) {
 		code = http.StatusCreated
 	}
 	writeJSON(w, code, map[string]any{"release": rel})
+}
+
+// StoreReleaseFiles пишет файлы сборки в RELEASES_DIR и строку client_releases.
+// actorID может быть пустым: в журнале запись без пользователя.
+func StoreReleaseFiles(ctx context.Context, db *pgxpool.Pool, actorID, version, notes string, files, expect map[string]string) (clientRelease, bool, error) {
+	var present []releasePart
+	var opened []*os.File
+	defer func() {
+		for _, file := range opened {
+			file.Close()
+		}
+	}()
+	for _, platform := range []string{"linux", "windows", "macos"} {
+		path := strings.TrimSpace(files[platform])
+		if path == "" {
+			continue
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return clientRelease{}, false, fmt.Errorf("нет файла %s", path)
+		}
+		info, err := file.Stat()
+		if err != nil || !info.Mode().IsRegular() {
+			file.Close()
+			return clientRelease{}, false, fmt.Errorf("нет файла %s", path)
+		}
+		opened = append(opened, file)
+		present = append(present, releasePart{platform: platform, file: file, expect: expect[platform]})
+	}
+	return storeRelease(ctx, db, actorID, version, notes, present)
+}
+
+func storeRelease(ctx context.Context, db *pgxpool.Pool, actorID, version, notes string, present []releasePart) (clientRelease, bool, error) {
+	version = strings.TrimSpace(version)
+	notes = strings.TrimSpace(notes)
+	if !validReleaseVersion(version) {
+		return clientRelease{}, false, errRequest
+	}
+	if len(notes) > 4000 {
+		return clientRelease{}, false, errRequest
+	}
+	if len(present) == 0 {
+		return clientRelease{}, false, errRequest
+	}
+	root, err := releaseRoot()
+	if err != nil {
+		return clientRelease{}, false, err
+	}
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return clientRelease{}, false, err
+	}
+	defer tx.Rollback(ctx)
+	created, err := lockDevRelease(ctx, tx, version, notes)
+	if err != nil {
+		return clientRelease{}, false, err
+	}
+	sums := map[string]string{}
+	sizes := map[string]int64{}
+	for _, part := range present {
+		sum, size, err := writeArtifact(root, version, part.platform, part.file, part.expect)
+		if err != nil {
+			return clientRelease{}, false, err
+		}
+		sums[part.platform] = sum
+		sizes[part.platform] = size
+	}
+	if err := updateReleaseFiles(ctx, tx, version, notes, sums, sizes); err != nil {
+		return clientRelease{}, false, err
+	}
+	rel, err := loadRelease(ctx, tx, version)
+	if err != nil {
+		return clientRelease{}, false, err
+	}
+	if err := writeAudit(ctx, tx, actorID, "release_upload", "release", version, version, notes); err != nil {
+		return clientRelease{}, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return clientRelease{}, false, err
+	}
+	return rel, created, nil
 }
 
 func lockDevRelease(ctx context.Context, tx pgx.Tx, version, notes string) (bool, error) {
@@ -255,36 +300,39 @@ func (s *Server) publishRelease(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	version := r.PathValue("version")
-	if !validReleaseVersion(version) {
-		writeMapped(w, errRequest)
-		return
-	}
-	ctx := r.Context()
-	tx, err := s.db.Begin(ctx)
+	rel, err := PublishRelease(r.Context(), s.db, p.UserID, r.PathValue("version"))
 	if err != nil {
 		writeMapped(w, err)
 		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"active_version": rel.Version, "release": rel})
+}
+
+// PublishRelease переводит черновик в released и делает его активной версией.
+// Повтор для уже выпущенной версии снова делает её активной.
+func PublishRelease(ctx context.Context, db *pgxpool.Pool, actorID, version string) (clientRelease, error) {
+	if !validReleaseVersion(version) {
+		return clientRelease{}, errRequest
+	}
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return clientRelease{}, err
 	}
 	defer tx.Rollback(ctx)
 	rel, err := loadRelease(ctx, tx, version)
 	if err != nil {
-		writeMapped(w, err)
-		return
+		return clientRelease{}, err
 	}
 	wasReleased := rel.Status == "released"
 	if rel.LinuxSize <= 0 || rel.WindowsSize <= 0 || len(rel.LinuxSHA256) != 64 || len(rel.WindowsSHA256) != 64 {
-		writeMapped(w, errConflict)
-		return
+		return clientRelease{}, errConflict
 	}
 	root, err := releaseRoot()
 	if err != nil {
-		writeMapped(w, err)
-		return
+		return clientRelease{}, err
 	}
 	if err := artifactsPresent(root, version, "linux", "windows"); err != nil {
-		writeMapped(w, err)
-		return
+		return clientRelease{}, err
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE client_releases
@@ -292,34 +340,29 @@ func (s *Server) publishRelease(w http.ResponseWriter, r *http.Request) {
 		    published_at = COALESCE(published_at, now())
 		WHERE version = $1
 	`, version); err != nil {
-		writeMapped(w, err)
-		return
+		return clientRelease{}, err
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO app_settings (key, value) VALUES ('active_client_version', $1)
 		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
 	`, version); err != nil {
-		writeMapped(w, err)
-		return
+		return clientRelease{}, err
 	}
 	rel, err = loadRelease(ctx, tx, version)
 	if err != nil {
-		writeMapped(w, err)
-		return
+		return clientRelease{}, err
 	}
 	action := "release_publish"
 	if wasReleased {
 		action = "release_rollback"
 	}
-	if err := writeAudit(ctx, tx, p.UserID, action, "release", version, version, ""); err != nil {
-		writeMapped(w, err)
-		return
+	if err := writeAudit(ctx, tx, actorID, action, "release", version, version, ""); err != nil {
+		return clientRelease{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		writeMapped(w, err)
-		return
+		return clientRelease{}, err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"active_version": version, "release": rel})
+	return rel, nil
 }
 
 func (s *Server) patchReleaseNotes(w http.ResponseWriter, r *http.Request) {
