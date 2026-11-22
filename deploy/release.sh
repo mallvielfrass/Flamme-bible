@@ -22,7 +22,10 @@ usage() {
 с теми же файлами и --publish.
 
 Скрипт ищет docker-compose.yml рядом с каталогом deploy/. Другой каталог
-задаётся переменной COMPOSE_DIR.
+задаётся переменной COMPOSE_DIR. Для Docker Compose передаётся --env-file:
+сначала COMPOSE_ENV_FILE, затем /opt/flammebible/.env, затем .env в каталоге
+над репозиторием и в самом репозитории. Без этого файла Compose подставляет
+пароль базы по умолчанию.
 
 Пример:
 
@@ -139,8 +142,36 @@ if [ -z "$version" ]; then
 	fi
 fi
 
+# Файл переменных для Compose. На сервере он лежит рядом с каталогом repo/,
+# а не внутри репозитория: без него пароль базы становится значением по умолчанию.
+find_env_file() {
+	if [ -n "${COMPOSE_ENV_FILE:-}" ]; then
+		printf '%s\n' "$COMPOSE_ENV_FILE"
+		return 0
+	fi
+	for candidate in /opt/flammebible/.env "$root/../.env" "$root/.env"; do
+		if [ -f "$candidate" ]; then
+			dir=$(CDPATH='' cd -- "$(dirname -- "$candidate")" && pwd)
+			base=$(basename -- "$candidate")
+			printf '%s\n' "$dir/$base"
+			return 0
+		fi
+	done
+	return 1
+}
+
+env_file=""
+if ! env_file=$(find_env_file); then
+	env_file=""
+	echo "предупреждение: файл .env не найден, Docker Compose может подставить пароль базы по умолчанию" >&2
+fi
+
 compose() {
-	docker compose --project-directory "$root" "$@"
+	if [ -n "$env_file" ]; then
+		docker compose --project-directory "$root" --env-file "$env_file" "$@"
+	else
+		docker compose --project-directory "$root" "$@"
+	fi
 }
 
 if ! compose exec -T api true >/dev/null 2>&1; then
