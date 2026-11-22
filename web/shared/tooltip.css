@@ -1,0 +1,16 @@
+/* Рисуется на body, чтобы карточки и overflow предков не обрезали подсказку. */
+.icon-tip {
+  position: fixed;
+  z-index: 50;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  background: var(--navy);
+  color: #fff;
+  font-family: var(--sans, system-ui, sans-serif);
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  visibility: hidden;
+}

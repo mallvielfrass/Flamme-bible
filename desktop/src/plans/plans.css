@@ -235,23 +235,6 @@
 .plans-page .icon-btn.round { border-radius: 999px; background: var(--green); border-color: var(--green); color: #fff; }
 .plans-page .icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.plans-page .icon-btn[data-tip]:hover::after,
-.plans-page .icon-btn[data-tip]:focus-visible::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 0.4rem);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--navy);
-  color: #fff;
-  font: 500 0.78rem/1.2 var(--sans, system-ui, sans-serif);
-  padding: 0.3rem 0.5rem;
-  border-radius: 6px;
-  white-space: nowrap;
-  z-index: 8;
-  pointer-events: none;
-}
-
 .plans-page .search-bar {
   display: flex;
   flex-wrap: wrap;
