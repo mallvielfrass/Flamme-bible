@@ -71,6 +71,19 @@ export function createAiApi({ baseUrl = '', getAuth, fetch: doFetch } = {}) {
     snapshot(dimensionId, songbookId) {
       return request(`/dimensions/${dimensionId}/songbooks/${songbookId}/snapshot`)
     },
+    searchSongs(q, extra = {}) {
+      const params = new URLSearchParams()
+      if (q) params.set('q', q)
+      if (extra.songbookId) params.set('songbook_id', extra.songbookId)
+      if (extra.limit) params.set('limit', String(extra.limit))
+      if (extra.offset) params.set('offset', String(extra.offset))
+      const query = params.toString()
+      return request(`/api/songs/search${query ? `?${query}` : ''}`)
+    },
+    songText(songbookId, fbid) {
+      const params = new URLSearchParams({ songbook_id: songbookId, fbid })
+      return request(`/api/songs/text?${params}`)
+    },
     bibleSemantic(q) {
       return request(`/api/bible/semantic?q=${encodeURIComponent(q)}&limit=5`)
     },

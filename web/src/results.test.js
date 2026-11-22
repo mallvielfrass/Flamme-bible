@@ -51,4 +51,15 @@ describe('loadResult', () => {
     await expect(loadResult(client, item)).resolves.toBe('Ибо так')
     expect(client.bibleSemantic).toHaveBeenCalledWith('Ин. 3:16')
   })
+
+  it('prefers songText and accepts an id without a dimension', async () => {
+    const client = {
+      songText: vi.fn(async () => ({ text: 'Куплет' })),
+      snapshot: vi.fn(),
+    }
+    const item = { kind: 'song', id: `${book}/grace`, title: 'Благодать', note: '', body: '' }
+    await expect(loadResult(client, item)).resolves.toBe('Куплет')
+    expect(client.songText).toHaveBeenCalledWith(book, 'grace')
+    expect(client.snapshot).not.toHaveBeenCalled()
+  })
 })

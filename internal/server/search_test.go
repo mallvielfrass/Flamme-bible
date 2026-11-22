@@ -60,6 +60,18 @@ func TestSongSearch(t *testing.T) {
 	if code != http.StatusOK || len(songHits(t, raw)) != 1 {
 		t.Fatalf("фильтр %d %s", code, raw)
 	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/songs/search?songbook_id="+book.ID, nil)
+	if code != http.StatusOK {
+		t.Fatalf("список сборника %d %s", code, raw)
+	}
+	hits = songHits(t, raw)
+	if len(hits) != 2 {
+		t.Fatalf("песни сборника %+v", hits)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/songs/search", nil)
+	if code != http.StatusBadRequest {
+		t.Fatalf("пустой поиск %d %s", code, raw)
+	}
 	code, raw = api(t, srv, "", http.MethodGet, "/api/songs/search?q=Альфа", nil)
 	if code != http.StatusUnauthorized {
 		t.Fatalf("без сессии %d %s", code, raw)

@@ -144,4 +144,64 @@ func TestAIToolSongs(t *testing.T) {
 	if out = run(owner.UserID, "list_songbooks", ``); !out.OK || !strings.Contains(out.Content, "Домашний") {
 		t.Fatalf("сборники %+v", out)
 	}
+	if len(out.Cards) != 1 || out.Cards[0].Kind != "songbook" || out.Cards[0].ID != book.ID || out.Cards[0].Title != "Домашний" || out.Cards[0].DimensionID != owner.DimensionID {
+		t.Fatalf("карточки сборников %+v", out.Cards)
+	}
+}
+
+// list_songbooks кладёт чипы в tool_result и сохраняет их в истории чата.
+func TestAIChatSongbookCards(t *testing.T) {
+	srv := openChatServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("тело провайдера: %v", err)
+		}
+		msgs, _ := body["messages"].([]any)
+		last, _ := msgs[len(msgs)-1].(map[string]any)
+		if _, ok := body["tools"]; ok && last["role"] == "user" {
+			fmt.Fprint(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"list_songbooks","arguments":"{}"}}]}}]}`+"\n\ndata: [DONE]\n\n")
+			return
+		}
+		fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", replyJSON("Вот ваши сборники"))
+	})
+	seed := seedChat(t, srv, false)
+	book := createBook(t, srv, seed.owner.Token, seed.owner.DimensionID, map[string]any{"fbid": "book", "title": "Домашний"})
+	if _, err := testPool.Exec(context.Background(), `UPDATE ai_models SET can_tools = true WHERE id = $1`, seed.modelID); err != nil {
+		t.Fatal(err)
+	}
+	res := postStream(t, srv, seed.owner.Token, "/api/ai/chats/"+seed.chatID+"/messages", map[string]any{"text": "какие у меня сборники?"})
+	events := readSSE(t, res.Body)
+	if eventText(events, "tool_start", "name") != "list_songbooks" {
+		t.Fatalf("события инструмента %+v", events)
+	}
+	var cards []any
+	for _, ev := range events {
+		if ev.Event == "tool_result" {
+			cards, _ = ev.Data["cards"].([]any)
+		}
+	}
+	if len(cards) != 1 {
+		t.Fatalf("карточки в потоке %+v", events)
+	}
+	card, _ := cards[0].(map[string]any)
+	if card["kind"] != "songbook" || card["id"] != book.ID || card["title"] != "Домашний" || card["dimension_id"] != seed.owner.DimensionID {
+		t.Fatalf("карточка %+v", card)
+	}
+	code, raw := api(t, srv, seed.owner.Token, http.MethodGet, "/api/ai/chats/"+seed.chatID, nil)
+	if code != http.StatusOK {
+		t.Fatalf("чат %d %s", code, raw)
+	}
+	var got struct {
+		Messages []aiMsgView `json:"messages"`
+	}
+	mustJSON(t, raw, &got)
+	var saved []aiCard
+	for _, msg := range got.Messages {
+		if msg.Role == "assistant" {
+			saved = msg.Cards
+		}
+	}
+	if len(saved) != 1 || saved[0].ID != book.ID || saved[0].Title != "Домашний" {
+		t.Fatalf("карточки в истории %+v", got.Messages)
+	}
 }

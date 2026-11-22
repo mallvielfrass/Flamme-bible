@@ -8,6 +8,8 @@ import done from '../../src/assets/twemoji/2705.svg'
 import { copyText } from './clipboard.js'
 import AiIcon from './AiIcon.vue'
 import MessageView from './MessageView.vue'
+import SongbookChips from './SongbookChips.vue'
+import { songbookCards } from './songbooks.js'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
@@ -97,6 +99,10 @@ function choose(id) {
   emit('model', id)
 }
 
+function booksOf(msg) {
+  return songbookCards(msg.cards)
+}
+
 function tokenLine(msg) {
   const parts = []
   if (msg.model) parts.push(msg.model)
@@ -176,8 +182,9 @@ function tokenLine(msg) {
           <div class="ai-body">
             <MessageView v-if="msg.content" :text="msg.content" />
             <p v-else-if="streaming" class="ai-wait">Пишет…</p>
-            <div v-if="msg.content" class="ai-acts">
-              <button class="ai-ib" type="button" aria-label="Копировать" @click="copyText(msg.content)">
+            <SongbookChips v-if="booksOf(msg).length" :items="booksOf(msg)" />
+            <div v-if="msg.content || booksOf(msg).length" class="ai-acts">
+              <button v-if="msg.content" class="ai-ib" type="button" aria-label="Копировать" @click="copyText(msg.content)">
                 <AiIcon name="copy" />
               </button>
               <button
