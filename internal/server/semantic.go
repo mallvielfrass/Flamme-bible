@@ -507,12 +507,26 @@ func (s *Server) searchSongsSemantic(w http.ResponseWriter, r *http.Request) {
 		s.searchSongs(w, r)
 		return
 	}
-	vec, ok := s.queryVector(r.Context(), q)
-	if !ok {
-		writeMapped(w, errSemanticOff)
+	hits, err := s.findSongsSemantic(r.Context(), p.UserID, q, book, dim, section, limit)
+	if err != nil {
+		writeMapped(w, err)
 		return
 	}
-	rows, err := s.db.Query(r.Context(), `
+	writeJSON(w, http.StatusOK, map[string]any{"songs": hits})
+}
+
+func (s *Server) findSongsSemantic(ctx context.Context, userID, q string, book, dim, section any, limit int) ([]semanticSongHit, error) {
+	if s.embedder == nil {
+		return nil, errSemanticOff
+	}
+	if err := s.usableSection(ctx, userID, section, book); err != nil {
+		return nil, err
+	}
+	vec, ok := s.queryVector(ctx, q)
+	if !ok {
+		return nil, errSemanticOff
+	}
+	rows, err := s.db.Query(ctx, `
 		SELECT songbook_id, fbid, title, songbook_title, dimension_id, status, section_title, part_text
 		FROM (
 			SELECT DISTINCT ON (n.songbook_id, n.fbid)
@@ -537,10 +551,9 @@ func (s *Server) searchSongsSemantic(w http.ResponseWriter, r *http.Request) {
 		) best
 		ORDER BY dist
 		LIMIT $7
-	`, vectorLiteral(vec), book, dim, p.UserID, limit*songHitMargin, section, limit)
+	`, vectorLiteral(vec), book, dim, userID, limit*songHitMargin, section, limit)
 	if err != nil {
-		writeMapped(w, err)
-		return
+		return nil, err
 	}
 	defer rows.Close()
 	hits := []semanticSongHit{}
@@ -548,17 +561,15 @@ func (s *Server) searchSongsSemantic(w http.ResponseWriter, r *http.Request) {
 		var hit semanticSongHit
 		var partText string
 		if err := rows.Scan(&hit.SongbookID, &hit.FBID, &hit.Title, &hit.SongbookTitle, &hit.DimensionID, &hit.Status, &hit.SectionTitle, &partText); err != nil {
-			writeMapped(w, err)
-			return
+			return nil, err
 		}
 		hit.Fragment = clipRunes(strings.TrimSpace(partText), fragmentRunes)
 		hits = append(hits, hit)
 	}
 	if err := rows.Err(); err != nil {
-		writeMapped(w, err)
-		return
+		return nil, err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"songs": hits})
+	return hits, nil
 }
 
 func (s *Server) queryVector(ctx context.Context, q string) ([]float32, bool) {

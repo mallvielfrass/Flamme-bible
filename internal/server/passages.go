@@ -334,12 +334,23 @@ func (s *Server) searchBibleSemantic(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
-	vec, ok := s.queryVector(r.Context(), q)
-	if !ok {
-		writeMapped(w, errSemanticOff)
+	hits, err := s.findPassages(r.Context(), q, moduleID, shortName, limit)
+	if err != nil {
+		writeMapped(w, err)
 		return
 	}
-	rows, err := s.db.Query(r.Context(), `
+	writeJSON(w, http.StatusOK, map[string]any{"passages": hits})
+}
+
+func (s *Server) findPassages(ctx context.Context, q string, moduleID, shortName any, limit int) ([]bibleHit, error) {
+	if s.embedder == nil {
+		return nil, errSemanticOff
+	}
+	vec, ok := s.queryVector(ctx, q)
+	if !ok {
+		return nil, errSemanticOff
+	}
+	rows, err := s.db.Query(ctx, `
 		SELECT p.module_id::text, m.short_name, m.title, p.book, p.book_name, p.chapter,
 		       p.verse_start, p.verse_end, p.reference, p.body
 		FROM bible_passages p
@@ -351,24 +362,21 @@ func (s *Server) searchBibleSemantic(w http.ResponseWriter, r *http.Request) {
 		LIMIT $4
 	`, vectorLiteral(vec), moduleID, shortName, limit)
 	if err != nil {
-		writeMapped(w, err)
-		return
+		return nil, err
 	}
 	defer rows.Close()
 	hits := []bibleHit{}
 	for rows.Next() {
 		var hit bibleHit
 		if err := rows.Scan(&hit.ModuleID, &hit.ModuleShortName, &hit.ModuleTitle, &hit.Book, &hit.BookName, &hit.Chapter, &hit.VerseStart, &hit.VerseEnd, &hit.Reference, &hit.Text); err != nil {
-			writeMapped(w, err)
-			return
+			return nil, err
 		}
 		hits = append(hits, hit)
 	}
 	if err := rows.Err(); err != nil {
-		writeMapped(w, err)
-		return
+		return nil, err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"passages": hits})
+	return hits, nil
 }
 
 func bibleModuleFilter(raw string) (id any, short any, err error) {

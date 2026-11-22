@@ -48,6 +48,64 @@ type pushResp struct {
 	Results []pushResult `json:"results"`
 }
 
+func TestApplyPushTxLeavesCommitToCaller(t *testing.T) {
+	srv := newTestServer(t)
+	user := registerUser(t, srv, "a@example.com", "secret-pass", nil)
+	book := createBook(t, srv, user.Token, user.DimensionID, map[string]any{"fbid": "book"})
+	s := New(testPool)
+	ctx := context.Background()
+	tx, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	opID := uuid.NewString()
+	p := principal{UserID: user.UserID, DeviceID: user.DeviceID}
+	results, _, err := s.applyPushTx(ctx, tx, p, user.DimensionID, book.ID, 0, []operationDTO{{
+		OperationID: opID,
+		Song:        songDTO{FBID: "song-tx", Title: "внутри", Parts: []partDTO{}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Status != "applied" || results[0].Revision != 1 || results[0].OperationID != opID {
+		t.Fatalf("результат %+v", results)
+	}
+	var n int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM songs WHERE songbook_id = $1 AND fbid = 'song-tx'`, book.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("транзакция видна снаружи: %d", n)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var title string
+	if err := testPool.QueryRow(ctx, `SELECT title FROM songs WHERE songbook_id = $1 AND fbid = 'song-tx'`, book.ID).Scan(&title); err != nil {
+		t.Fatal(err)
+	}
+	if title != "внутри" {
+		t.Fatalf("название %s", title)
+	}
+	results, err = s.applyPush(ctx, p, user.DimensionID, book.ID, 1, []operationDTO{{
+		OperationID: uuid.NewString(),
+		Song:        songDTO{FBID: "song-wrap", Title: "обёртка", Parts: []partDTO{}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Status != "applied" || results[0].Revision != 2 {
+		t.Fatalf("обёртка %+v", results)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT title FROM songs WHERE songbook_id = $1 AND fbid = 'song-wrap'`, book.ID).Scan(&title); err != nil {
+		t.Fatal(err)
+	}
+	if title != "обёртка" {
+		t.Fatalf("обёртка не записала %s", title)
+	}
+}
+
 func TestPushSuccess(t *testing.T) {
 	srv := newTestServer(t)
 	user := registerUser(t, srv, "a@example.com", "secret-pass", nil)
