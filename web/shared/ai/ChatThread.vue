@@ -66,9 +66,21 @@ const placeholder = computed(() => {
   return 'Спросите о песнях, Библии или планах…'
 })
 
-watch(() => props.messages, async () => {
+// Лента держится у низа, пока пользователь сам не прокрутил вверх.
+const stick = ref(true)
+
+function onScroll() {
+  const el = box.value
+  if (el) stick.value = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+}
+
+watch(() => props.messages.length, () => {
+  stick.value = true
+})
+
+watch(() => [props.messages, props.streaming], async () => {
   await nextTick()
-  if (box.value) box.value.scrollTop = box.value.scrollHeight
+  if (box.value && stick.value) box.value.scrollTop = box.value.scrollHeight
 }, { deep: true })
 
 function submit(text) {
@@ -99,7 +111,9 @@ function choose(id) {
   emit('model', id)
 }
 
+// Пока ответ пишется, сборники не показываем: иначе текст растёт над ними и уходит вверх.
 function booksOf(msg) {
+  if (props.streaming && lastAssistant.value && msg.id === lastAssistant.value.id) return []
   return songbookCards(msg.cards)
 }
 
@@ -156,7 +170,7 @@ function tokenLine(msg) {
       </div>
     </div>
   </div>
-  <div v-else ref="box" class="ai-msgs">
+  <div v-else ref="box" class="ai-msgs" @scroll.passive="onScroll">
     <div class="ai-col">
       <article v-for="msg in messages" :key="msg.id || msg.seq" :class="msg.role === 'user' ? 'ai-user' : 'ai-ai'">
         <template v-if="msg.role === 'user'">

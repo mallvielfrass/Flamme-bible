@@ -31,6 +31,7 @@ onMounted(async () => {
 </script>
 
 <template>
+  <Teleport to="body">
   <AppModal wide :title="book.title || 'Сборник'" @close="emit('close')">
     <p v-if="book.note" class="hint">{{ book.note }}</p>
     <label class="ai-book-search">Поиск
@@ -45,4 +46,5 @@ onMounted(async () => {
       <button class="btn slim" type="button" @click="emit('close')">Закрыть</button>
     </template>
   </AppModal>
+  </Teleport>
 </template>

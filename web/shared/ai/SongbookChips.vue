@@ -1,12 +1,17 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import SongbookSongsModal from './SongbookSongsModal.vue'
 
-defineProps({
+const props = defineProps({
   items: { type: Array, default: () => [] },
 })
 
+const first = 6
 const opened = ref(null)
+const all = ref(false)
+
+const shown = computed(() => (all.value ? props.items : props.items.slice(0, first)))
+const hidden = computed(() => props.items.length - shown.value.length)
 </script>
 
 <template>
@@ -14,16 +19,15 @@ const opened = ref(null)
     <p class="ai-books-label">Сборники</p>
     <div class="ai-books-list">
       <button
-        v-for="book in items"
+        v-for="book in shown"
         :key="book.id"
         class="ai-book"
         type="button"
+        :title="book.note || undefined"
         @click="opened = book"
-      >
-        <span class="ai-hit-k">Сборник</span>
-        <span class="ai-hit-t">{{ book.title }}</span>
-        <span v-if="book.note" class="ai-hit-n">{{ book.note }}</span>
-      </button>
+      >{{ book.title }}</button>
+      <button v-if="hidden > 0" class="ai-book more" type="button" @click="all = true">ещё {{ hidden }}</button>
+      <button v-else-if="items.length > first" class="ai-book more" type="button" @click="all = false">свернуть</button>
     </div>
   </div>
   <SongbookSongsModal v-if="opened" :book="opened" @close="opened = null" />
