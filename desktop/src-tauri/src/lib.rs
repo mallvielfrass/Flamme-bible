@@ -1,3 +1,4 @@
+mod bible;
 mod config;
 mod mojibake;
 mod paths;
@@ -49,6 +50,12 @@ struct UpdateView {
     notes: String,
     available: bool,
     platform: String,
+}
+
+fn module_reply_matches(reply: &remote::ModuleExists, module: &bible::BibleIdentity) -> bool {
+    (reply.short_name.is_empty() || reply.short_name == module.short_name)
+        && (reply.title.is_empty() || reply.title == module.title)
+        && (reply.content_hash.is_empty() || reply.content_hash == module.content_hash)
 }
 
 fn settings_dir() -> Result<std::path::PathBuf, String> {
@@ -727,6 +734,86 @@ async fn search_songs(query: String) -> Result<Vec<remote::SongHit>, String> {
         .await
 }
 
+#[derive(serde::Serialize)]
+struct BibleSyncRow {
+    path: String,
+    short_name: String,
+    title: String,
+    content_hash: String,
+    server_id: String,
+    uploaded: bool,
+}
+
+#[tauri::command]
+fn bible_module_links() -> Result<Vec<BibleSyncRow>, String> {
+    let (_, cfg) = load_config()?;
+    let mut rows: Vec<BibleSyncRow> = cfg
+        .bibles
+        .iter()
+        .map(|(hash, bind)| BibleSyncRow {
+            path: bind.path.clone(),
+            short_name: bind.short_name.clone(),
+            title: bind.title.clone(),
+            content_hash: hash.clone(),
+            server_id: bind.server_id.clone(),
+            uploaded: false,
+        })
+        .collect();
+    rows.sort_by(|left, right| left.short_name.cmp(&right.short_name));
+    Ok(rows)
+}
+
+#[tauri::command]
+async fn sync_bible_modules() -> Result<Vec<BibleSyncRow>, String> {
+    let (dir, mut cfg) = load_config()?;
+    require_login(&cfg)?;
+    if cfg.visio_path.is_empty() {
+        return Err("Сначала выберите папку VisioBible".into());
+    }
+    let scan = visio::open_location(Path::new(&cfg.visio_path))?;
+    if scan.needs_choice {
+        return Err("Найдено несколько папок. Выберите одну.".into());
+    }
+    let client = Remote::new(&cfg.server_url, &cfg.token)?;
+    let mut rows = Vec::new();
+    for bible in &scan.bibles {
+        let module = bible::identity(Path::new(&bible.path))?;
+        let found = client
+            .module_exists(&module.short_name, &module.title, &module.content_hash)
+            .await?;
+        let (server_id, uploaded) = if bible::should_upload(found.exists, &found.id) {
+            let saved = client.upload_module(&module).await?;
+            if saved.id.is_empty() || !module_reply_matches(&saved, &module) {
+                return Err("Сервер не вернул id модуля".into());
+            }
+            (saved.id, saved.uploaded)
+        } else if !module_reply_matches(&found, &module) {
+            return Err("Сервер вернул другой модуль".into());
+        } else {
+            (found.id, false)
+        };
+        cfg.bibles.insert(
+            module.content_hash.clone(),
+            config::BibleBind {
+                server_id: server_id.clone(),
+                short_name: module.short_name.clone(),
+                title: module.title.clone(),
+                path: module.dir.display().to_string(),
+            },
+        );
+        config::save(&dir, &cfg)?;
+        rows.push(BibleSyncRow {
+            path: module.dir.display().to_string(),
+            short_name: module.short_name,
+            title: module.title,
+            content_hash: module.content_hash,
+            server_id,
+            uploaded,
+        });
+    }
+    Ok(rows)
+}
+
 #[tauri::command]
 async fn check_update() -> Result<UpdateView, String> {
     let (_, cfg) = load_config()?;
@@ -798,6 +885,8 @@ pub fn run() {
             search_songs,
             check_update,
             download_update,
+            bible_module_links,
+            sync_bible_modules,
         ])
         .run(tauri::generate_context!())
         .expect("окно не открылось");

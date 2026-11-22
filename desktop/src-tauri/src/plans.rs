@@ -653,7 +653,7 @@ fn journal_name(kind: &str) -> &'static str {
     }
 }
 
-fn valid_module_name(name: &str) -> bool {
+pub(crate) fn valid_module_name(name: &str) -> bool {
     let mut chars = name.chars();
     let Some(first) = chars.next() else {
         return false;
