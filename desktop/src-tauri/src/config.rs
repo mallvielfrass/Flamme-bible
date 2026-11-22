@@ -24,6 +24,9 @@ pub struct Config {
     pub songbooks: BTreeMap<String, SongbookBind>,
     #[serde(default)]
     pub plans: BTreeMap<String, PlanBind>,
+    /// Ключ — content_hash модуля. id сервера пустой, пока модуль не сверен.
+    #[serde(default)]
+    pub bibles: BTreeMap<String, BibleBind>,
     #[serde(default)]
     pub pending_fbids: BTreeMap<String, String>,
     /// Пусто или `utf-8` — как раньше. `windows-1251` — планы и PlanDef.ini.
@@ -82,6 +85,18 @@ pub struct SongbookBind {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct BibleBind {
+    #[serde(default)]
+    pub server_id: String,
+    #[serde(default)]
+    pub short_name: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PlanBind {
     #[serde(default)]
     pub server_id: String,
@@ -122,6 +137,7 @@ impl Default for Config {
             visio_path: String::new(),
             songbooks: BTreeMap::new(),
             plans: BTreeMap::new(),
+            bibles: BTreeMap::new(),
             pending_fbids: BTreeMap::new(),
             plan_encoding: String::new(),
             skipped: BTreeMap::new(),
@@ -229,6 +245,9 @@ pub fn apply_server_url(cfg: &mut Config, url: &str) -> Result<(), String> {
             plan.server_id.clear();
             plan.items.clear();
         }
+        for bible in cfg.bibles.values_mut() {
+            bible.server_id.clear();
+        }
     }
     cfg.server_url = url;
     Ok(())
@@ -314,6 +333,14 @@ mod tests {
                 ..SongbookBind::default()
             },
         );
+        cfg.bibles.insert(
+            "hash".into(),
+            BibleBind {
+                server_id: "module".into(),
+                short_name: "EX".into(),
+                ..BibleBind::default()
+            },
+        );
         apply_server_url(&mut cfg, "https://example.com").unwrap();
         assert!(cfg.token.is_empty());
         assert!(cfg.user.email.is_empty());
@@ -322,6 +349,8 @@ mod tests {
         assert!(cfg.songbooks["a.vbm"].server_id.is_empty());
         assert!(cfg.songbooks["a.vbm"].songs.is_empty());
         assert!(cfg.songbooks["a.vbm"].groups.is_empty());
+        assert!(cfg.bibles["hash"].server_id.is_empty());
+        assert_eq!(cfg.bibles["hash"].short_name, "EX");
         apply_server_url(&mut cfg, "https://example.com/").unwrap();
         assert_eq!(cfg.server_url, "https://example.com");
     }
