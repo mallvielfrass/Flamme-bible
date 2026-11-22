@@ -84,6 +84,7 @@ pub struct RemoteBook {
     pub header_short: String,
     pub header_title: String,
     pub songs: Vec<Song>,
+    pub order: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -449,6 +450,14 @@ fn book_work_from(
             _ => {}
         }
     }
+    // The snapshot lists songs by fbid. Display order is `order`.
+    // A song the list does not name (local-only, or a "keep both" copy)
+    // keeps its current relative place after the named songs.
+    let result = if let Some(remote) = remote {
+        apply_server_order(result, &remote.order)
+    } else {
+        result
+    };
     let server_id = remote
         .map(|book| book.server_id.clone())
         .unwrap_or_else(|| book.server_id.clone());
@@ -490,6 +499,34 @@ fn book_work_from(
         songs: result,
         push,
     })
+}
+
+fn apply_server_order(songs: Vec<Song>, order: &[String]) -> Vec<Song> {
+    if order.is_empty() {
+        return songs;
+    }
+    let mut used = vec![false; songs.len()];
+    let mut out = Vec::with_capacity(songs.len());
+    for id in order {
+        if id.is_empty() {
+            continue;
+        }
+        let Some(index) = songs
+            .iter()
+            .enumerate()
+            .position(|(index, song)| !used[index] && song.fbid == *id)
+        else {
+            continue;
+        };
+        used[index] = true;
+        out.push(songs[index].clone());
+    }
+    for (index, song) in songs.into_iter().enumerate() {
+        if !used[index] {
+            out.push(song);
+        }
+    }
+    out
 }
 
 fn resolve_conflict(
@@ -836,6 +873,7 @@ mod tests {
             header_short: "FB".into(),
             header_title: "Test".into(),
             songs,
+            order: Vec::new(),
         }
     }
 
@@ -1049,6 +1087,94 @@ mod tests {
         let outcome = apply(&input, &[], &[], String::new).unwrap();
         assert!(outcome.plans[0].push);
         assert_eq!(outcome.plans[0].version, 2);
+    }
+
+    #[test]
+    fn written_songs_follow_snapshot_order_and_local_only_songs_stay_after() {
+        let base_a = song(A, "А", "было");
+        let base_b = song(B, "Б", "было");
+        let local = vec![
+            song(A, "А", "моё"),
+            song(C, "В", "своя"),
+            song(D, "Г", "ещё своя"),
+            song(B, "Б", "тоже моё"),
+        ];
+        let mut remote_book = remote(vec![base_a.clone(), base_b.clone()]);
+        remote_book.order = vec![B.into(), "missing".into(), A.into()];
+        let input = Input {
+            books: vec![book(local, vec![base_a, base_b])],
+            plans: Vec::new(),
+            remote_books: vec![remote_book],
+            remote_plans: Vec::new(),
+            modules_dir: String::new(),
+            plans_dir: String::new(),
+        };
+        let outcome = apply(&input, &[], &[], String::new).unwrap();
+        let ids = |songs: &[Song]| {
+            songs
+                .iter()
+                .map(|song| song.fbid.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            ids(&outcome.books[0].songs),
+            vec![B.to_string(), A.to_string(), C.to_string(), D.to_string()]
+        );
+        assert_eq!(outcome.books[0].order, ids(&outcome.books[0].songs));
+        assert_eq!(
+            ids(&outcome.books[0].push),
+            vec![A.to_string(), C.to_string(), D.to_string(), B.to_string()]
+        );
+    }
+
+    #[test]
+    fn pull_of_a_new_book_writes_snapshot_order_not_fbid_order() {
+        let mut remote_book = remote(vec![
+            song(A, "А", "1"),
+            song(B, "Б", "2"),
+            song(C, "В", "3"),
+        ]);
+        remote_book.order = vec![C.into(), A.into(), B.into()];
+        let input = Input {
+            books: Vec::new(),
+            plans: Vec::new(),
+            remote_books: vec![remote_book],
+            remote_plans: Vec::new(),
+            modules_dir: "/modules".into(),
+            plans_dir: String::new(),
+        };
+        let outcome = apply(&input, &[], &[], String::new).unwrap();
+        let ids: Vec<_> = outcome.books[0]
+            .songs
+            .iter()
+            .map(|song| song.fbid.as_str())
+            .collect();
+        assert_eq!(ids, vec![C, A, B]);
+        assert!(outcome.books[0].push.is_empty());
+        assert_eq!(
+            outcome.books[0].order,
+            vec![C.to_string(), A.to_string(), B.to_string()]
+        );
+    }
+
+    #[test]
+    fn empty_snapshot_order_keeps_the_local_sequence() {
+        let local = vec![song(B, "Б", "текст"), song(A, "А", "текст")];
+        let input = Input {
+            books: vec![book(local.clone(), local)],
+            plans: Vec::new(),
+            remote_books: vec![remote(vec![song(A, "А", "текст"), song(B, "Б", "текст")])],
+            remote_plans: Vec::new(),
+            modules_dir: String::new(),
+            plans_dir: String::new(),
+        };
+        let outcome = apply(&input, &[], &[], String::new).unwrap();
+        let ids: Vec<_> = outcome.books[0]
+            .songs
+            .iter()
+            .map(|song| song.fbid.as_str())
+            .collect();
+        assert_eq!(ids, vec![B, A]);
     }
 
     #[test]

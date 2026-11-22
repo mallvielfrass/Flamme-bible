@@ -99,7 +99,6 @@ pub struct Snapshot {
     #[serde(default)]
     pub songs: Vec<Song>,
     #[serde(default)]
-    #[allow(dead_code)]
     pub order: Vec<String>,
 }
 

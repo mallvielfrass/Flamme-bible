@@ -568,6 +568,7 @@ async fn gather() -> Result<(std::path::PathBuf, config::Config, Gathered), Stri
             header_short: view.header.header_short,
             header_title: view.header.header_title,
             songs,
+            order: snap.order,
         });
     }
     let (remote_plans, plan_warning) = match client.plans("all").await {
