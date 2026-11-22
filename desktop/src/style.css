@@ -331,7 +331,7 @@ pre {
 
 .banner.ok { border-color: #d7c39a; background: #fbf6ea; color: var(--ink); }
 
-.banner .hint, .place, .bible-line, .progress-label, .entity-meta, .choice, .stat-chip, .action { font-family: var(--sans); }
+.banner .hint, .place, .progress-label, .entity-meta, .choice, .stat-chip, .action { font-family: var(--sans); }
 
 .banner .btn { margin-top: 0.45rem; }
 
@@ -428,7 +428,6 @@ pre {
 
 .skipped-block summary { cursor: pointer; font-family: var(--sans); margin-bottom: 0.4rem; }
 
-.bible-line { margin: 0.2rem 0 0; }
 
 .modal.wide:has(.modal-head) { width: min(52rem, 100%); }
 

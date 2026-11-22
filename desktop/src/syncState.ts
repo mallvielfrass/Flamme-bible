@@ -357,12 +357,6 @@ export function freshChipText(books: number, plans: number): string {
   return `${books + plans} новых`;
 }
 
-export function bibleLine(bibles: { short_name: string; name: string }[]): string {
-  if (!bibles.length) return "Модулей Библии в папке не видно. Синхронизации модулей нет.";
-  const names = bibles.map((bible) => bible.short_name || bible.name).filter((name) => name.length > 0);
-  return `Модули Библии (${names.length ? names.join(", ") : "без имени"}) пока только в обзоре, синхронизации модулей нет.`;
-}
-
 export function placeLine(folder: string, space: string): string {
   if (folder && space) return `Папка ${folder} · пространство «${space}»`;
   if (folder) return `Папка ${folder}`;
@@ -602,14 +596,12 @@ export interface SyncScreen {
   plans: ListedRow[];
   hint: string;
   ready: boolean;
-  bible: string;
 }
 
 export function syncScreen(
   preview: PreviewData,
   chosen: Record<string, Choice>,
   adopted: Record<string, true>,
-  bibles: { short_name: string; name: string }[],
   skips: SkipLists = { songbooks: [], plans: [] },
 ): SyncScreen {
   const visible = withoutRememberedSkips(preview, skips);
@@ -634,6 +626,5 @@ export function syncScreen(
     plans: listedPlans(visible, chosen, adopted),
     hint: startHint(pending, conflictsLeft),
     ready: pending.length === 0 && conflictsLeft === 0,
-    bible: bibleLine(bibles),
   };
 }

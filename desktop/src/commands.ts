@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { BibleLink } from "./bibleSync";
+export type { BibleLink };
 import type { GroupDecision, PlanDecision, PreviewGroup, SongDecision } from "./syncState";
 
 export interface Settings {
@@ -122,6 +124,8 @@ export const api = {
   dimensions: () => invoke<Dimension[]>("list_dimensions"),
   selectDimension: (dimension_id: string) => invoke<Settings>("select_dimension", { dimension_id }),
   openVisio: (path: string) => invoke<Scan>("open_visio", { path }),
+  bibleLinks: () => invoke<BibleLink[]>("bible_module_links"),
+  syncBibleModules: () => invoke<BibleLink[]>("sync_bible_modules"),
   preview: () => invoke<Preview>("preview_sync"),
   start: (songs: SongDecision[], plans: PlanDecision[], groups: GroupDecision[]) =>
     invoke<{ notes: string[]; backups: string[] }>("start_sync", { request: { songs, plans, groups } }),

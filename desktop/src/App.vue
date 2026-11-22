@@ -5,10 +5,11 @@ import CloseDialog from "./components/CloseDialog.vue";
 import ConflictModal from "./components/ConflictModal.vue";
 import LoginView from "./components/LoginView.vue";
 import SettingsModal, { type SettingsDraft } from "./components/SettingsModal.vue";
+import BibleModulesPanel from "./components/BibleModulesPanel.vue";
 import SyncView from "./components/SyncView.vue";
 import PlansTab from "./plans/PlansTab.vue";
 import UpdatesTab from "./updates/UpdatesTab.vue";
-import { api, type Dimension, type Preview, type Progress, type Scan, type Settings, type SongRow } from "./commands";
+import { api, type BibleLink, type Dimension, type Preview, type Progress, type Scan, type Settings, type SongRow } from "./commands";
 import { adoptionKey, decisionsFrom, groupKey, hasUnsyncedChanges, planKey, songKey, syncReady, type Choice } from "./syncState";
 
 const tab = ref<"sync" | "plans" | "updates">(
@@ -41,6 +42,9 @@ const settingsBusy = ref(false);
 const chosen = ref<Record<string, Choice>>({});
 const adopted = ref<Record<string, true>>({});
 const conflict = ref<SongRow | null>(null);
+const bibleLinks = ref<BibleLink[]>([]);
+const bibleBusy = ref(false);
+const bibleError = ref("");
 
 const spaceName = computed(() => {
   const found = dimensions.value.find((space) => space.id === settings.value.dimension_id);
@@ -79,6 +83,7 @@ async function boot() {
       dimensions.value = await api.dimensions();
       if (scan.value && !scan.value.needs_choice) await loadPreview(false);
     }
+    bibleLinks.value = await api.bibleLinks();
   } catch (err) {
     const text = message(err);
     if (settings.value.logged_in) error.value = text;
@@ -205,6 +210,19 @@ function onPlanChoice(key: string, choice: "keep_local" | "take_server" | "keep_
 
 function onGroupChoice(bookPath: string, sectionId: string, choice: "keep_local" | "take_server") {
   remember(groupKey(bookPath, sectionId), { kind: choice });
+}
+
+async function syncBibles() {
+  bibleBusy.value = true;
+  bibleError.value = "";
+  try {
+    bibleLinks.value = await api.syncBibleModules();
+    note("Модули Библии сверены с сервером.");
+  } catch (err) {
+    bibleError.value = message(err);
+  } finally {
+    bibleBusy.value = false;
+  }
 }
 
 function remember(key: string, choice: Choice) {
@@ -338,7 +356,11 @@ onMounted(() => {
         @adopt="adopt"
         @skip="(kind, id) => rememberSkip(kind, id, true)"
         @restore="(kind, id) => rememberSkip(kind, id, false)"
-      />
+      >
+        <template #bibles>
+          <BibleModulesPanel :bibles="scan?.bibles ?? []" :links="bibleLinks" :busy="bibleBusy || busy !== ''" :error="bibleError" @sync="syncBibles" />
+        </template>
+      </SyncView>
       <PlansTab v-else-if="tab === 'plans'" :logged-in="settings.logged_in" />
       <UpdatesTab v-else />
     </main>
