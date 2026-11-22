@@ -99,9 +99,38 @@ const (
 var ErrSilent = errors.New("провайдер молчит")
 
 // Message — одна реплика для /chat/completions.
+// Ответ модели с вызовами несёт ToolCalls, ответ инструмента — ToolCallID.
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// Tool — описание функции в формате OpenAI: {"type":"function","function":{…}}.
+type Tool struct {
+	Type     string       `json:"type"`
+	Function ToolFunction `json:"function"`
+}
+
+// ToolFunction — имя, описание и JSON-схема аргументов.
+type ToolFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+
+// ToolCall — вызов функции, который попросила модель. Arguments — строка с JSON.
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
+	Function FunctionCall `json:"function"`
+}
+
+// FunctionCall — имя функции и её аргументы.
+type FunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 // Usage — счётчик из потока, если провайдер его прислал.
@@ -112,20 +141,30 @@ type Usage struct {
 }
 
 // ChatRequest — один запрос чата. MaxTokens 0 значит не передавать предел.
+// Tools пустой — инструменты не передаются. ToolChoice пустой — "auto".
 type ChatRequest struct {
-	Model     string
-	Messages  []Message
-	MaxTokens int
+	Model      string
+	Messages   []Message
+	MaxTokens  int
+	Tools      []Tool
+	ToolChoice string
+}
+
+// Reply — итог одного ответа: счётчик и вызовы инструментов, если модель их попросила.
+type Reply struct {
+	Usage     Usage
+	ToolCalls []ToolCall
 }
 
 // Chat читает SSE /chat/completions (stream=true) и отдаёт куски текста.
+// Вызовы инструментов собираются из потока и возвращаются в Reply.
 // Первый байт ждётся 60 секунд, весь ответ — 120. HTTP — клиент netguard.
-func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta func(string) error) (Usage, error) {
+func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta func(string) error) (Reply, error) {
 	if c == nil || c.HTTP == nil {
-		return Usage{}, errors.New("нет клиента")
+		return Reply{}, errors.New("нет клиента")
 	}
 	if strings.TrimSpace(req.Model) == "" || len(req.Messages) == 0 {
-		return Usage{}, errors.New("запрос")
+		return Reply{}, errors.New("запрос")
 	}
 	first := c.firstByte
 	if first <= 0 {
@@ -147,14 +186,22 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta func(string)
 	if req.MaxTokens > 0 {
 		body["max_tokens"] = req.MaxTokens
 	}
+	if len(req.Tools) > 0 {
+		choice := req.ToolChoice
+		if choice == "" {
+			choice = "auto"
+		}
+		body["tools"] = req.Tools
+		body["tool_choice"] = choice
+	}
 	raw, err := json.Marshal(body)
 	if err != nil {
-		return Usage{}, err
+		return Reply{}, err
 	}
 	endpoint := strings.TrimRight(strings.TrimSpace(c.BaseURL), "/") + "/chat/completions"
 	httpReq, err := http.NewRequestWithContext(answerCtx, http.MethodPost, endpoint, bytes.NewReader(raw))
 	if err != nil {
-		return Usage{}, errors.New(secret.Scrub(err.Error(), c.Token))
+		return Reply{}, errors.New(secret.Scrub(err.Error(), c.Token))
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -179,31 +226,32 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta func(string)
 	firstCancel()
 	if err != nil {
 		if ctx.Err() != nil {
-			return Usage{}, ctx.Err()
+			return Reply{}, ctx.Err()
 		}
 		select {
 		case <-timed:
-			return Usage{}, ErrSilent
+			return Reply{}, ErrSilent
 		default:
 		}
 		if errors.Is(answerCtx.Err(), context.DeadlineExceeded) {
-			return Usage{}, answerCtx.Err()
+			return Reply{}, answerCtx.Err()
 		}
-		return Usage{}, errors.New(secret.Scrub(err.Error(), c.Token))
+		return Reply{}, errors.New(secret.Scrub(err.Error(), c.Token))
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-		return Usage{}, errors.New(secret.Scrub("провайдер "+errorText(res.Status, string(raw)), c.Token))
+		return Reply{}, errors.New(secret.Scrub("провайдер "+errorText(res.Status, string(raw)), c.Token))
 	}
 	return readChatStream(ctx, res.Body, c.Token, onDelta)
 }
 
-func readChatStream(ctx context.Context, body io.Reader, token string, onDelta func(string) error) (Usage, error) {
+func readChatStream(ctx context.Context, body io.Reader, token string, onDelta func(string) error) (Reply, error) {
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	var data []string
 	var usage Usage
+	var calls toolCallParts
 	flush := func() error {
 		if len(data) == 0 {
 			return nil
@@ -216,7 +264,8 @@ func readChatStream(ctx context.Context, body io.Reader, token string, onDelta f
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
+					Content   string          `json:"content"`
+					ToolCalls []toolCallDelta `json:"tool_calls"`
 				} `json:"delta"`
 			} `json:"choices"`
 			Usage *struct {
@@ -239,6 +288,9 @@ func readChatStream(ctx context.Context, body io.Reader, token string, onDelta f
 			usage.Reported = true
 		}
 		for _, choice := range chunk.Choices {
+			for _, part := range choice.Delta.ToolCalls {
+				calls.add(part)
+			}
 			if choice.Delta.Content == "" || onDelta == nil {
 				continue
 			}
@@ -250,15 +302,15 @@ func readChatStream(ctx context.Context, body io.Reader, token string, onDelta f
 	}
 	for sc.Scan() {
 		if ctx.Err() != nil {
-			return usage, ctx.Err()
+			return Reply{Usage: usage, ToolCalls: calls.list}, ctx.Err()
 		}
 		line := strings.TrimRight(sc.Text(), "\r")
 		if line == "" {
 			if err := flush(); err != nil {
 				if errors.Is(err, errChatDone) {
-					return usage, nil
+					return Reply{Usage: usage, ToolCalls: calls.list}, nil
 				}
-				return usage, err
+				return Reply{Usage: usage, ToolCalls: calls.list}, err
 			}
 			continue
 		}
@@ -269,17 +321,59 @@ func readChatStream(ctx context.Context, body io.Reader, token string, onDelta f
 	}
 	if err := sc.Err(); err != nil {
 		if ctx.Err() != nil {
-			return usage, ctx.Err()
+			return Reply{Usage: usage, ToolCalls: calls.list}, ctx.Err()
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return usage, err
+			return Reply{Usage: usage, ToolCalls: calls.list}, err
 		}
-		return usage, errors.New(secret.Scrub(err.Error(), token))
+		return Reply{Usage: usage, ToolCalls: calls.list}, errors.New(secret.Scrub(err.Error(), token))
 	}
 	if err := flush(); err != nil && !errors.Is(err, errChatDone) {
-		return usage, err
+		return Reply{Usage: usage, ToolCalls: calls.list}, err
 	}
-	return usage, nil
+	return Reply{Usage: usage, ToolCalls: calls.list}, nil
 }
 
 var errChatDone = errors.New("done")
+
+// toolCallDelta — кусок вызова инструмента из потока. Имя и id приходят в первом куске,
+// аргументы — частями, которые нужно склеить по index.
+type toolCallDelta struct {
+	Index    *int   `json:"index"`
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+type toolCallParts struct {
+	list []ToolCall
+}
+
+// add дописывает кусок к вызову с тем же index. Если index нет (так шлют
+// некоторые совместимые серверы), новый id начинает новый вызов, иначе кусок идёт к последнему.
+func (p *toolCallParts) add(d toolCallDelta) {
+	i := len(p.list) - 1
+	switch {
+	case d.Index != nil:
+		i = *d.Index
+	case d.ID != "" && (i < 0 || p.list[i].ID != d.ID):
+		i = len(p.list)
+	}
+	if i < 0 || i > 64 {
+		return
+	}
+	for len(p.list) <= i {
+		p.list = append(p.list, ToolCall{Type: "function"})
+	}
+	call := &p.list[i]
+	if call.ID == "" {
+		call.ID = d.ID
+	}
+	if call.Function.Name == "" {
+		call.Function.Name = d.Function.Name
+	}
+	call.Function.Arguments += d.Function.Arguments
+}

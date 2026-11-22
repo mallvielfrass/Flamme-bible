@@ -1,9 +1,10 @@
-// Пакет agent собирает обычный чат: системная реплика, хвост истории и один вызов модели.
-// Цикла инструментов здесь нет — он появится отдельно.
+// Пакет agent собирает чат: системная реплика, хвост истории и цикл
+// «модель → вызовы инструментов → снова модель».
 package agent
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -93,12 +94,72 @@ func tail(turns []Turn) []Turn {
 	return turns[start:]
 }
 
+const toolsHint = "\nДля песен, сборников, мест Писания и планов вызывай инструменты. Не выдумывай песни и стихи, которых нет в ответах инструментов."
+
+// Tools — инструменты для одного ответа. Run выполняет вызов и возвращает
+// текст для модели (обычно JSON). Ошибку инструмент тоже пишет в этот текст.
+type Tools struct {
+	List     []provider.Tool
+	Run      func(ctx context.Context, call provider.ToolCall) string
+	MaxCalls int
+}
+
 // Run отправляет историю в модель и передаёт куски текста наружу.
-func Run(ctx context.Context, client *provider.Client, model string, turns []Turn, now time.Time, onDelta func(string) error) (provider.Usage, error) {
-	return client.Chat(ctx, provider.ChatRequest{
-		Model:    model,
-		Messages: History(now, turns),
-	}, onDelta)
+// Если модель просит инструменты, выполняет их и спрашивает модель снова.
+// После MaxCalls вызовов инструменты остаются в запросе (без них часть провайдеров
+// отвергает историю с ролью tool), но с tool_choice "none".
+func Run(ctx context.Context, client *provider.Client, model string, turns []Turn, now time.Time, tools Tools, onDelta func(string) error) (provider.Usage, error) {
+	msgs := History(now, turns)
+	if len(tools.List) > 0 {
+		msgs[0].Content += toolsHint
+	}
+	var total provider.Usage
+	calls := 0
+	for {
+		req := provider.ChatRequest{Model: model, Messages: msgs, Tools: tools.List}
+		if calls >= tools.MaxCalls {
+			req.ToolChoice = "none"
+		}
+		var text strings.Builder
+		reply, err := client.Chat(ctx, req, func(delta string) error {
+			text.WriteString(delta)
+			if onDelta == nil {
+				return nil
+			}
+			return onDelta(delta)
+		})
+		addUsage(&total, reply.Usage)
+		// Модель, которая просит инструмент вопреки "none", дальше не крутим.
+		if err != nil || len(reply.ToolCalls) == 0 || len(tools.List) == 0 || req.ToolChoice == "none" {
+			return total, err
+		}
+		for i := range reply.ToolCalls {
+			if reply.ToolCalls[i].ID == "" {
+				reply.ToolCalls[i].ID = "call_" + strconv.Itoa(calls+i+1)
+			}
+		}
+		msgs = append(msgs, provider.Message{Role: "assistant", Content: text.String(), ToolCalls: reply.ToolCalls})
+		for _, call := range reply.ToolCalls {
+			calls++
+			result := `{"error":"лимит вызовов инструментов исчерпан, ответь по уже найденному"}`
+			if calls <= tools.MaxCalls {
+				result = tools.Run(ctx, call)
+			}
+			msgs = append(msgs, provider.Message{Role: "tool", Content: result, ToolCallID: call.ID})
+		}
+		if ctx.Err() != nil {
+			return total, ctx.Err()
+		}
+	}
+}
+
+func addUsage(total *provider.Usage, u provider.Usage) {
+	if !u.Reported {
+		return
+	}
+	total.PromptTokens += u.PromptTokens
+	total.CompletionTokens += u.CompletionTokens
+	total.Reported = true
 }
 
 // Title просит короткое название без инструментов. Предел — 20 токенов.

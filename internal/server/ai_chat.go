@@ -43,10 +43,11 @@ type aiMsgView struct {
 }
 
 type chatModel struct {
-	ID      string
-	Name    string
-	BaseURL string
-	Token   string
+	ID       string
+	Name     string
+	BaseURL  string
+	Token    string
+	CanTools bool
 }
 
 // Один ответ на чат и два на пользователя. Иначе второй запрос получает 409.
@@ -198,12 +199,13 @@ func (s *Server) resolveChatModel(ctx context.Context, userID, prefer, chatModel
 		return chatModel{}, errRequest
 	}
 	var name, providerID string
+	var canTools bool
 	err := s.db.QueryRow(ctx, `
-		SELECT m.model, p.id::text
+		SELECT m.model, p.id::text, m.can_tools
 		FROM ai_models m
 		JOIN ai_providers p ON p.id = m.provider_id
 		WHERE m.id = $1 AND p.user_id = $2
-	`, id, userID).Scan(&name, &providerID)
+	`, id, userID).Scan(&name, &providerID, &canTools)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return chatModel{}, errNotFound
 	}
@@ -214,7 +216,7 @@ func (s *Server) resolveChatModel(ctx context.Context, userID, prefer, chatModel
 	if err != nil {
 		return chatModel{}, err
 	}
-	return chatModel{ID: id, Name: name, BaseURL: base, Token: token}, nil
+	return chatModel{ID: id, Name: name, BaseURL: base, Token: token, CanTools: canTools}, nil
 }
 
 func (s *Server) titleModel(ctx context.Context, userID string, chat chatModel) chatModel {
@@ -571,7 +573,7 @@ func (s *Server) postAIMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var buf strings.Builder
-	usage, runErr := agent.Run(runCtx, s.chatClient(model.BaseURL, model.Token), model.Name, turns, time.Now(), func(delta string) error {
+	usage, runErr := agent.Run(runCtx, s.chatClient(model.BaseURL, model.Token), model.Name, turns, time.Now(), s.chatTools(p.UserID, model, settings, send), func(delta string) error {
 		buf.WriteString(delta)
 		return send("delta", map[string]string{"text": delta})
 	})
@@ -609,6 +611,28 @@ func (s *Server) postAIMessage(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	_ = send("done", map[string]any{"message_id": assistantID, "stopped": stopped})
+}
+
+// chatTools — инструменты чтения для модели с отметкой «tools». Каждый вызов
+// показывается в интерфейсе событиями tool_start и tool_result.
+func (s *Server) chatTools(userID string, model chatModel, settings aiSettings, send func(string, any) error) agent.Tools {
+	if !model.CanTools {
+		return agent.Tools{}
+	}
+	return agent.Tools{
+		List:     aiTools,
+		MaxCalls: settings.MaxToolCalls,
+		Run: func(ctx context.Context, call provider.ToolCall) string {
+			var args any
+			if json.Unmarshal([]byte(call.Function.Arguments), &args) != nil {
+				args = map[string]any{}
+			}
+			_ = send("tool_start", map[string]any{"call_id": call.ID, "name": call.Function.Name, "label": aiToolLabel(call), "args": args})
+			out := s.runAITool(ctx, userID, call)
+			_ = send("tool_result", map[string]any{"call_id": call.ID, "ok": out.OK, "summary": out.Summary})
+			return out.Content
+		},
+	}
 }
 
 func chatErrorText(err error) string {
