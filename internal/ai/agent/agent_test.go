@@ -169,3 +169,48 @@ func TestRunToolsLimit(t *testing.T) {
 		t.Fatalf("запросов %d, tool_choice %v", requests, last["tool_choice"])
 	}
 }
+
+func TestHistoryImages(t *testing.T) {
+	img := []string{"data:image/jpeg;base64,AAAA"}
+	msgs := History(time.Now(), []Turn{
+		{Role: "assistant", Content: "раньше", Images: img},
+		{Role: "user", Content: "что на фото?", Images: img},
+	})
+	if len(msgs) != 3 || msgs[1].Images != nil || len(msgs[2].Images) != 1 {
+		t.Fatalf("картинки только у вопроса: %+v", msgs)
+	}
+}
+
+func TestReadImages(t *testing.T) {
+	var body struct {
+		Model     string `json:"model"`
+		MaxTokens int    `json:"max_tokens"`
+		Tools     any    `json:"tools"`
+		Messages  []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\" 1. Благодать\\n\"}}]}\n\ndata: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+	client := &provider.Client{BaseURL: srv.URL + "/v1", Token: "sk-test-token-1234", HTTP: srv.Client()}
+	text, _, err := ReadImages(context.Background(), client, "vision-b", []string{"data:image/png;base64,AAAA"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text != "1. Благодать" {
+		t.Fatalf("текст %q", text)
+	}
+	if body.Model != "vision-b" || body.Tools != nil || len(body.Messages) != 2 {
+		t.Fatalf("запрос %+v", body)
+	}
+	if !strings.Contains(string(body.Messages[1].Content), `"type":"image_url"`) || !strings.Contains(string(body.Messages[1].Content), "data:image/png;base64,AAAA") {
+		t.Fatalf("картинка не ушла частью: %s", body.Messages[1].Content)
+	}
+}
