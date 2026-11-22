@@ -17,6 +17,7 @@ mod visio;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use futures_util::stream::{self, StreamExt, TryStreamExt};
 use tauri::{Emitter, Manager};
 use uuid::Uuid;
 
@@ -632,6 +633,57 @@ async fn ensure_section(client: &Remote, book_id: &str, title: &str) -> Result<S
     }
 }
 
+/// Сколько сборников качать с сервера одновременно при сверке.
+const REMOTE_BOOKS_AT_ONCE: usize = 4;
+
+/// Сборник с сервера: снимок песен и разделы. Возвращает и курсор снимка.
+async fn fetch_remote_book(
+    client: &Remote,
+    dimension_id: &str,
+    view: remote::SongbookView,
+) -> Result<(RemoteBook, i64), String> {
+    let snap = client.snapshot(dimension_id, &view.id).await?;
+    let mut songs = Vec::new();
+    for song in snap.songs {
+        songs.push(visio::normalize_remote_song(&song)?);
+    }
+    let mut sections = client.sections(&view.id).await?;
+    sections.sort_by(|left, right| {
+        left.position
+            .cmp(&right.position)
+            .then(left.title.cmp(&right.title))
+            .then(left.id.cmp(&right.id))
+    });
+    let cursor = snap.cursor;
+    Ok((
+        RemoteBook {
+            server_id: view.id,
+            fbid: view.fbid,
+            title: view.title,
+            short_name: view.short_name,
+            publisher: view.publisher,
+            revision_date: view.revision_date,
+            comment: view.comment,
+            format_version: view.header.format_version,
+            charset: view.header.charset,
+            flags: view.header.flags,
+            header_short: view.header.header_short,
+            header_title: view.header.header_title,
+            songs,
+            order: snap.order,
+            sections: sections
+                .into_iter()
+                .map(|section| groups::Section {
+                    id: section.id,
+                    name: section.title,
+                    songs: section.songs,
+                })
+                .collect(),
+        },
+        cursor,
+    ))
+}
+
 struct Gathered(Input, i64, String);
 
 async fn gather() -> Result<(std::path::PathBuf, config::Config, Gathered), String> {
@@ -691,46 +743,18 @@ async fn gather() -> Result<(std::path::PathBuf, config::Config, Gathered), Stri
     config::save(&dir, &cfg)?;
     let client = Remote::new(&cfg.server_url, &cfg.token)?;
     let views = client.songbooks(&cfg.user.dimension_id).await?;
+    // Сборники качаются по несколько сразу; порядок результатов совпадает с порядком `views`.
+    // Первая ошибка по порядку прерывает сверку, как и раньше.
+    let fetched: Vec<(RemoteBook, i64)> = stream::iter(views)
+        .map(|view| fetch_remote_book(&client, &cfg.user.dimension_id, view))
+        .buffered(REMOTE_BOOKS_AT_ONCE)
+        .try_collect()
+        .await?;
     let mut remote_books = Vec::new();
     let mut cursor = 0i64;
-    for view in views {
-        let snap = client.snapshot(&cfg.user.dimension_id, &view.id).await?;
-        cursor = cursor.max(snap.cursor);
-        let mut songs = Vec::new();
-        for song in snap.songs {
-            songs.push(visio::normalize_remote_song(&song)?);
-        }
-        let mut sections = client.sections(&view.id).await?;
-        sections.sort_by(|left, right| {
-            left.position
-                .cmp(&right.position)
-                .then(left.title.cmp(&right.title))
-                .then(left.id.cmp(&right.id))
-        });
-        remote_books.push(RemoteBook {
-            server_id: view.id,
-            fbid: view.fbid,
-            title: view.title,
-            short_name: view.short_name,
-            publisher: view.publisher,
-            revision_date: view.revision_date,
-            comment: view.comment,
-            format_version: view.header.format_version,
-            charset: view.header.charset,
-            flags: view.header.flags,
-            header_short: view.header.header_short,
-            header_title: view.header.header_title,
-            songs,
-            order: snap.order,
-            sections: sections
-                .into_iter()
-                .map(|section| groups::Section {
-                    id: section.id,
-                    name: section.title,
-                    songs: section.songs,
-                })
-                .collect(),
-        });
+    for (book, book_cursor) in fetched {
+        cursor = cursor.max(book_cursor);
+        remote_books.push(book);
     }
     let (remote_plans, plan_warning) = match client.plans("all").await {
         Ok(plans) => (plans, String::new()),
