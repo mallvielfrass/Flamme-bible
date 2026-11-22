@@ -119,7 +119,11 @@ func (s *Server) imageReader(ctx context.Context, userID string, chat chatModel)
 	if tasks["vision"] == "" {
 		return chatModel{}, errAIVision
 	}
-	return s.resolveChatModel(ctx, userID, tasks["vision"], "")
+	reader, err := s.resolveChatModel(ctx, userID, tasks["vision"], "")
+	if errors.Is(err, errNotFound) {
+		return chatModel{}, errAIVision
+	}
+	return reader, err
 }
 
 // readImages распознаёт текст отдельной моделью для фото и дописывает его
