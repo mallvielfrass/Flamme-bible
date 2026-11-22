@@ -556,23 +556,23 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.ai-books-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.ai-books-list { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .ai-book {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.35rem 0.55rem;
+  max-width: 16rem;
   margin: 0;
-  padding: 0.45rem 0.7rem;
+  padding: 0.2rem 0.6rem;
+  overflow: hidden;
   background: #fff;
   border: 1px solid var(--line, #e4d6b8);
-  border-radius: 10px;
-  font: 0.9rem var(--sans);
-  text-align: left;
+  border-radius: 999px;
+  font: 0.85rem var(--sans);
+  white-space: nowrap;
+  text-overflow: ellipsis;
   cursor: pointer;
 }
 .ai-book:hover { border-color: #c8b58a; }
-.ai-book-search { display: grid; gap: 0.3rem; margin: 0 0 0.7rem; }
+.ai-book.more { color: var(--muted); background: transparent; }
+.ai-book-search { position: sticky; top: 0; z-index: 1; display: grid; gap: 0.3rem; margin: 0 0 0.7rem; padding: 0.3rem 0; background: var(--card, #fff); }
 .ai-hits .icon-btn {
   display: inline-flex;
   align-items: center;

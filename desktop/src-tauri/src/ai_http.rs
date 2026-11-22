@@ -199,14 +199,18 @@ pub fn check_ai_path(path: &str) -> Result<(), String> {
     Err("Запрос чата не подходит".into())
 }
 
-/// Чат и чтение текста песни или стиха. Запись — только в `/api/ai/`.
+/// Чат и чтение: песни сборника, текст песни, стих. Запись — только в `/api/ai/`.
 pub fn check_chat_path(method: &str, path: &str) -> Result<(), String> {
     safe_path(path)?;
     let bare = path.split('?').next().unwrap_or(path);
     if bare.starts_with("/api/ai/") {
         return Ok(());
     }
-    if method == "GET" && (bare == "/api/bible/semantic" || snapshot_path(bare)) {
+    let read = matches!(
+        bare,
+        "/api/bible/semantic" | "/api/songs/search" | "/api/songs/text"
+    );
+    if method == "GET" && (read || snapshot_path(bare)) {
         return Ok(());
     }
     Err("Запрос чата не подходит".into())
@@ -218,7 +222,10 @@ fn safe_path(path: &str) -> Result<(), String> {
     }
     let ok = path.chars().all(|ch| {
         ch.is_ascii_alphanumeric()
-            || matches!(ch, '/' | '?' | '&' | '=' | '-' | '_' | '.' | '%' | '~')
+            || matches!(
+                ch,
+                '/' | '?' | '&' | '=' | '-' | '_' | '.' | '%' | '~' | '+'
+            )
     });
     if !ok {
         return Err("Запрос чата не подходит".into());
@@ -311,6 +318,16 @@ mod tests {
         assert!(check_chat_path("POST", book).is_err());
         assert!(check_chat_path("GET", "/api/bible/semantic?q=%D0%98%D0%BD").is_ok());
         assert!(check_chat_path("GET", "/api/plans").is_err());
+        let list = "/api/songs/search?songbook_id=22222222-2222-4222-8222-222222222222&limit=1000";
+        assert!(check_chat_path("GET", list).is_ok());
+        assert!(check_chat_path("POST", list).is_err());
+        assert!(check_chat_path(
+            "GET",
+            "/api/songs/text?songbook_id=22222222-2222-4222-8222-222222222222&fbid=a1"
+        )
+        .is_ok());
+        assert!(check_chat_path("GET", "/api/songs/searchx").is_err());
+        assert!(check_chat_path("GET", "/api/songs/search?q=a+b").is_ok());
         assert!(check_chat_path(
             "GET",
             "/dimensions/not-uuid/songbooks/22222222-2222-4222-8222-222222222222/snapshot"
