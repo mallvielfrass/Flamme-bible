@@ -143,6 +143,16 @@ async function start() {
   }
 }
 
+async function refreshFolder() {
+  if (!settings.value.visio_path) return;
+  try {
+    scan.value = await api.openVisio(settings.value.visio_path);
+    preview.value = null;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
 async function repairEncoding(path: string) {
   error.value = "";
   try {
@@ -256,7 +266,20 @@ onMounted(() => {
       @repair="repairEncoding"
       @set-encoding="setPlanEncoding"
     />
-    <PlansView v-else-if="tab === 'plans'" :scan="scan" :hits="hits" :windows1251="settings.plan_windows1251" @create="createPlan" @search="search" @repair="repairEncoding" @set-encoding="setPlanEncoding" />
+    <PlansView
+      v-else-if="tab === 'plans'"
+      :scan="scan"
+      :hits="hits"
+      :windows1251="settings.plan_windows1251"
+      :logged-in="settings.logged_in"
+      :dimensions="dimensions"
+      :error="error"
+      @create="createPlan"
+      @search="search"
+      @repair="repairEncoding"
+      @set-encoding="setPlanEncoding"
+      @changed="refreshFolder"
+    />
     <UpdatesView v-else :info="updateInfo" :error="updateError" :busy="updateBusy" :saved-path="savedPath" @check="checkUpdate" @download="downloadUpdate" />
     <ConflictModal
       v-if="conflict"
