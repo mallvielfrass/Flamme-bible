@@ -320,6 +320,43 @@ pub async fn plans_read(id: String) -> Result<ServerPlan, String> {
     decode(reply.status, &reply.text)
 }
 
+/// Полный текст песни для просмотра пункта плана (GET /api/songs/text).
+#[tauri::command]
+pub async fn plans_song_text(
+    songbook_id: String,
+    fbid: String,
+) -> Result<serde_json::Value, String> {
+    let client = signed_client()?;
+    let path = format!(
+        "/api/songs/text?songbook_id={}&fbid={}",
+        remote::urlencoding_min(&songbook_id),
+        remote::urlencoding_min(&fbid)
+    );
+    let reply = client
+        .exchange(reqwest::Method::GET, &path, None::<&()>)
+        .await?;
+    decode(reply.status, &reply.text)
+}
+
+/// Один стих перевода для просмотра пункта плана (GET /api/bible/verse).
+#[tauri::command]
+pub async fn plans_verse_text(
+    module: String,
+    book: u32,
+    chapter: u32,
+    verse: u32,
+) -> Result<serde_json::Value, String> {
+    let client = signed_client()?;
+    let path = format!(
+        "/api/bible/verse?module={}&book={book}&chapter={chapter}&verse={verse}",
+        remote::urlencoding_min(&module)
+    );
+    let reply = client
+        .exchange(reqwest::Method::GET, &path, None::<&()>)
+        .await?;
+    decode(reply.status, &reply.text)
+}
+
 #[tauri::command]
 pub async fn plans_create(
     title: String,

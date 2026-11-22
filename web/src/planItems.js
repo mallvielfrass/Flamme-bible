@@ -248,3 +248,37 @@ export function planTarget(io) {
     },
   }
 }
+
+// Полный текст пункта плана для просмотра «глазом».
+// io — запросы сайта или клиента: song(songbookId, fbid), verse(module, book, chapter, verse).
+// Если сервер текста не дал, показывается то, что сохранено в самом пункте.
+export async function planItemText(item, io) {
+  if (item.kind === 'song') {
+    const fallback = {
+      title: item.title || 'Песня',
+      source: [item.songbook_title, item.section_title].filter(Boolean).join(' · '),
+      text: '',
+    }
+    if (!item.songbook_id || !item.song_id) return fallback
+    const song = await io.song(item.songbook_id, item.song_id)
+    return {
+      title: song.title || fallback.title,
+      source: [song.songbook_title || item.songbook_title, song.section_title || item.section_title].filter(Boolean).join(' · '),
+      text: song.text || '',
+    }
+  }
+  if (item.kind === 'bible') {
+    const reference = item.reference || [item.book, item.chapter, item.verse].filter(Boolean).join(':')
+    const view = { title: reference || 'Стих', source: [item.module_short_name, reference].filter(Boolean).join(' · '), text: item.quote || '' }
+    if (!item.module_short_name || !item.book || !item.chapter || !item.verse) return view
+    try {
+      const verse = await io.verse(item.module_short_name, item.book, item.chapter, item.verse)
+      const module = verse.module_title ? `${verse.module_short_name} — ${verse.module_title}` : verse.module_short_name
+      return { ...view, source: [module, reference].filter(Boolean).join(' · '), text: verse.text || view.text }
+    } catch (err) {
+      if (view.text) return view
+      throw err
+    }
+  }
+  return { title: item.caption || 'Заметка', source: 'Заметка', text: item.quote || '' }
+}

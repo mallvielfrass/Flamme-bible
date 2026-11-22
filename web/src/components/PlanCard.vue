@@ -26,7 +26,7 @@ const props = defineProps({
 
 const emit = defineEmits([
   'toggle', 'save', 'download', 'append', 'duplicate', 'remove', 'cancel',
-  'title', 'destination', 'add', 'edit', 'move', 'remove-item', 'repair',
+  'title', 'destination', 'add', 'edit', 'view', 'move', 'remove-item', 'repair',
 ])
 
 const when = computed(() => planUpdatedLabel(props.updatedAt))
@@ -113,6 +113,7 @@ function subtitle(item) {
             <span class="badge">{{ itemKindLabel(item.kind) }}</span>
             <IconButton icon="up" tone="green" small label="Выше" :disabled="index === 0 || busy" @click="emit('move', index, -1)" />
             <IconButton icon="down" tone="green" small label="Ниже" :disabled="index === items.length - 1 || busy" @click="emit('move', index, 1)" />
+            <IconButton icon="eye" small label="Показать текст" title="Показать текст" @click="emit('view', index)" />
             <IconButton icon="pencil" small label="Изменить пункт" :disabled="busy" @click="emit('edit', index)" />
             <IconButton icon="cross" tone="red" small label="Убрать пункт" :disabled="busy" @click="emit('remove-item', index)" />
           </div>

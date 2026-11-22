@@ -1089,6 +1089,8 @@ pub fn run() {
             plan_tab::plans_folder,
             plan_tab::plans_songbooks,
             plan_tab::plans_find_songs,
+            plan_tab::plans_song_text,
+            plan_tab::plans_verse_text,
             bible_module_links,
             sync_bible_modules,
             ai_http,

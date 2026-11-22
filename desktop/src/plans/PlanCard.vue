@@ -32,6 +32,7 @@ const emit = defineEmits<{
   remove: [];
   add: [];
   edit: [number];
+  view: [number];
   move: [number, number];
   removeItem: [number];
 }>();
@@ -107,6 +108,7 @@ function onTitle(event: Event) {
             <span class="badge">{{ kindLabel(item.kind) }}</span>
             <IconButton icon="up" tone="green" small label="Выше" :disabled="index === 0 || busy" @click="emit('move', index, -1)" />
             <IconButton icon="down" tone="green" small label="Ниже" :disabled="index === items.length - 1 || busy" @click="emit('move', index, 1)" />
+            <IconButton icon="eye" small label="Показать текст" title="Показать текст" @click="emit('view', index)" />
             <IconButton icon="pencil" small label="Изменить пункт" :disabled="busy" @click="emit('edit', index)" />
             <IconButton icon="cross" tone="red" small label="Убрать пункт" :disabled="busy" @click="emit('removeItem', index)" />
           </div>
