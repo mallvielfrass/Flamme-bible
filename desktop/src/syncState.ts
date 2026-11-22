@@ -75,6 +75,16 @@ export function canStart(rows: { action: string; key: string }[], chosen: Record
   return unresolved(rows, chosen).length === 0;
 }
 
+export function conflictRows(
+  songs: { action: string; book_path: string; fbid: string }[],
+  plans: { action: string; key: string }[],
+): { action: string; key: string }[] {
+  return [
+    ...songs.filter((row) => row.action === "conflict").map((row) => ({ action: row.action, key: songKey(row.book_path, row.fbid) })),
+    ...plans.filter((row) => row.action === "conflict").map((row) => ({ action: row.action, key: planKey(row.key) })),
+  ];
+}
+
 export interface SongDecision {
   book_path: string;
   fbid: string;
