@@ -75,6 +75,15 @@ export function canStart(rows: { action: string; key: string }[], chosen: Record
   return unresolved(rows, chosen).length === 0;
 }
 
+/** Есть ли в ответе preview_sync то, что ещё не совпадает с папкой.
+ *  Считаются песни и планы с действием кроме `unchanged`: push_*, pull_* и conflict.
+ *  Список пропущенных этим компьютером ещё не хранится и сюда не входит.
+ *  null значит, что список не запрашивали: закрытие из-за этого не блокируется. */
+export function hasUnsyncedChanges(preview: { songs: { action: string }[]; plans: { action: string }[] } | null): boolean {
+  if (!preview) return false;
+  return [...preview.songs, ...preview.plans].some((row) => row.action !== "unchanged");
+}
+
 export function conflictRows(
   songs: { action: string; book_path: string; fbid: string }[],
   plans: { action: string; key: string }[],

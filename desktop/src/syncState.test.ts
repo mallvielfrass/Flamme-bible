@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionLabel, canStart, conflictRows, countPhrase, decisionsFrom, foundLine, groupRows, planKey, songKey } from "./syncState";
+import { actionLabel, canStart, conflictRows, countPhrase, decisionsFrom, foundLine, groupRows, hasUnsyncedChanges, planKey, songKey } from "./syncState";
 
 describe("sync screen state", () => {
   it("groups uploads, downloads and conflicts without showing raw codes", () => {
@@ -57,5 +57,13 @@ describe("sync screen state", () => {
       songs: [{ book_path: "a.vbm", fbid: "s1", choice: "take_server", title: "", lyrics: "" }],
       plans: [{ key: "plan-1", choice: "keep_local" }],
     });
+  });
+
+  it("flags preview rows that are not yet the same in the folder", () => {
+    expect(hasUnsyncedChanges(null)).toBe(false);
+    expect(hasUnsyncedChanges({ songs: [{ action: "unchanged" }], plans: [{ action: "unchanged" }] })).toBe(false);
+    expect(hasUnsyncedChanges({ songs: [{ action: "push_update" }], plans: [] })).toBe(true);
+    expect(hasUnsyncedChanges({ songs: [], plans: [{ action: "pull_add" }] })).toBe(true);
+    expect(hasUnsyncedChanges({ songs: [{ action: "conflict" }], plans: [] })).toBe(true);
   });
 });

@@ -131,4 +131,6 @@ export const api = {
   searchSongs: (query: string) => invoke<SongHit[]>("search_songs", { query }),
   checkUpdate: () => invoke<UpdateView>("check_update"),
   downloadUpdate: () => invoke<string>("download_update"),
+  setCloseGuard: (enabled: boolean) => invoke<void>("set_close_guard", { enabled }),
+  finishClose: () => invoke<void>("finish_close"),
 };
