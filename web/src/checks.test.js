@@ -13,6 +13,7 @@ import {
   readPlanFile,
   inviteToken,
   moduleNameOk,
+  moduleUploadParts,
   releaseVersionOk,
   statusText,
 } from './checks'
@@ -27,6 +28,17 @@ describe('checks', () => {
     expect(bookStatus({ publish_requested: true })).toBe('на проверке')
     expect(bookStatus({})).toBe('черновик')
     expect(bookStatus({ status: 'rejected', public: true })).toBe('отклонено')
+  })
+
+  it('sends module folder files without the top folder and VisioBible cache', () => {
+    const parts = moduleUploadParts([
+      { name: 'bibleqt.ini', webkitRelativePath: 'RST/bibleqt.ini' },
+      { name: 'Book01.htm', webkitRelativePath: 'RST/Book01.htm' },
+      { name: 'visiobible.cache', webkitRelativePath: 'RST/visiobible.cache' },
+      { name: 'VisioBible.idx', webkitRelativePath: 'RST/VisioBible.idx' },
+      { name: 'loose.htm' },
+    ])
+    expect(parts.map((part) => part.name)).toEqual(['bibleqt.ini', 'Book01.htm', 'loose.htm'])
   })
 
   it('allows approve from pending or rejected and revoke only from approved', () => {

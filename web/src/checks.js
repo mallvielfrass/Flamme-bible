@@ -12,6 +12,18 @@ export function moduleNameOk(name) {
   return moduleNameRe.test(name)
 }
 
+// Файлы папки модуля для POST /api/modules/upload: путь без верхней папки,
+// служебные файлы VisioBible не отправляются. Остальное лишнее сервер отбросит сам.
+export function moduleUploadParts(files) {
+  return Array.from(files || [])
+    .map((file) => {
+      const path = String(file.webkitRelativePath || file.name).replaceAll('\\', '/')
+      const name = path.includes('/') ? path.slice(path.indexOf('/') + 1) : path
+      return { file, name }
+    })
+    .filter(({ name }) => name && !/(^|\/)visiobible\./i.test(name))
+}
+
 export function releaseVersionOk(version) {
   if (!version || version.includes('..') || version.includes('/') || version.includes('\\')) return false
   return releaseVersionRe.test(version)
