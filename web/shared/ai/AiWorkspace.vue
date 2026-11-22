@@ -1,7 +1,8 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, provide, ref, watch } from 'vue'
 import { explain } from '../http.js'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import { aiResultKey } from './results.js'
 import { useAiStore } from './store.js'
 import ChatList from './ChatList.vue'
 import ChatThread from './ChatThread.vue'
@@ -14,6 +15,7 @@ const props = defineProps({
 const emit = defineEmits(['open-chat', 'open-settings'])
 
 const ai = useAiStore()
+provide(aiResultKey, (item) => ai.fetchResult(item))
 const confirmRef = ref(null)
 const drawer = ref(false)
 let skip = ''

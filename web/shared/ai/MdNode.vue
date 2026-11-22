@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { loadTwemoji } from '../../src/emoji.js'
 import MdNode from './MdNode.vue'
+import ResultList from './ResultList.vue'
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -25,6 +26,7 @@ onMounted(async () => {
   <s v-else-if="node.type === 's'"><MdNode v-for="(child, index) in node.children" :key="index" :node="child" /></s>
   <code v-else-if="node.type === 'code'">{{ node.text }}</code>
   <pre v-else-if="node.type === 'pre'"><code>{{ node.text }}</code></pre>
+  <ResultList v-else-if="node.type === 'results'" :items="node.items || []" />
   <a v-else-if="node.type === 'a'" :href="node.href" rel="noopener noreferrer" target="_blank"><MdNode v-for="(child, index) in node.children" :key="index" :node="child" /></a>
   <p v-else-if="node.type === 'p'"><MdNode v-for="(child, index) in node.children" :key="index" :node="child" /></p>
   <ul v-else-if="node.type === 'ul'"><MdNode v-for="(child, index) in node.children" :key="index" :node="child" /></ul>

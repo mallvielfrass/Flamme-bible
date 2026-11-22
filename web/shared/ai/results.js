@@ -1,0 +1,121 @@
+/** Ключ provide: загрузка текста песни или стиха, если в пункте его нет. */
+export const aiResultKey = Symbol('aiResult')
+
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * @typedef {Object} AiResult
+ * @property {'song'|'verse'} kind
+ * @property {string} id
+ * @property {string} title
+ * @property {string} note
+ * @property {string} body
+ */
+
+/**
+ * Блок ```results в ответе. Пустой или битый JSON — не результаты.
+ * @param {string} raw
+ * @returns {AiResult[]}
+ */
+export function parseResults(raw) {
+  let data
+  try {
+    data = JSON.parse(String(raw || ''))
+  } catch {
+    return []
+  }
+  if (!Array.isArray(data)) return []
+  return data.map(normalizeResult).filter(Boolean)
+}
+
+/**
+ * @param {any} raw
+ * @returns {AiResult|null}
+ */
+export function normalizeResult(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const kind = raw.kind === 'verse' || raw.kind === 'bible' ? 'verse' : raw.kind === 'song' ? 'song' : ''
+  if (!kind) return null
+  if (kind === 'song') {
+    const id = songId(raw)
+    const title = text(raw.title) || 'Песня'
+    const body = songBody(raw)
+    if (!id && !body) return null
+    return { kind, id, title, note: text(raw.songbook_title || raw.note), body }
+  }
+  const title = text(raw.reference || raw.title || raw.id) || 'Стих'
+  const id = text(raw.id) || title
+  return {
+    kind,
+    id,
+    title,
+    note: text(raw.module_title || raw.module_short_name || raw.note),
+    body: text(raw.text || raw.body),
+  }
+}
+
+function text(value) {
+  return String(value || '').trim()
+}
+
+function songId(raw) {
+  const explicit = text(raw.id)
+  if (explicit.includes('/')) return explicit
+  const dim = text(raw.dimension_id)
+  const book = text(raw.songbook_id)
+  const fbid = text(raw.fbid || raw.id)
+  if (dim && book && fbid) return `${dim}/${book}/${fbid}`
+  return explicit
+}
+
+function songBody(raw) {
+  const ready = text(raw.lyrics || raw.body)
+  if (ready) return ready
+  if (!Array.isArray(raw.parts)) return ''
+  return raw.parts.map((part) => text(part?.text)).filter(Boolean).join('\n\n')
+}
+
+const books = new Map()
+
+/**
+ * Текст пункта, которого нет в самом ответе.
+ * Песня: id = dimension/songbook/fbid, снимок сборника.
+ * Стих: id или reference уходит в поиск по смыслу.
+ * @param {{ snapshot: Function, bibleSemantic: Function }} client
+ * @param {AiResult} item
+ */
+export async function loadResult(client, item) {
+  if (item.kind === 'song') return loadSong(client, item.id)
+  return loadVerse(client, item.title || item.id)
+}
+
+async function loadSong(client, id) {
+  const [dim, book, ...rest] = String(id || '').split('/')
+  const fbid = rest.join('/')
+  if (!uuid.test(dim) || !uuid.test(book) || !fbid || fbid.includes('..')) {
+    throw new Error('Текст не найден.')
+  }
+  const key = `${dim}/${book}`
+  if (!books.has(key)) {
+    books.set(key, client.snapshot(dim, book).catch((err) => {
+      books.delete(key)
+      throw err
+    }))
+  }
+  const snap = await books.get(key)
+  const song = (snap?.songs || []).find((row) => row.fbid === fbid && !row.deleted)
+  const body = songBody(song || {})
+  if (!body) throw new Error('Текст не найден.')
+  return body
+}
+
+async function loadVerse(client, q) {
+  const query = text(q).slice(0, 200)
+  if (!query) throw new Error('Текст не найден.')
+  const data = await client.bibleSemantic(query)
+  const list = data?.passages || []
+  const hit = list.find((row) => text(row.reference) === query) || list[0]
+  const body = text(hit?.text)
+  if (!body) throw new Error('Текст не найден.')
+  return body
+}
