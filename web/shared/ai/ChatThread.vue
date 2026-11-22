@@ -1,10 +1,11 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
-import music from '../../assets/twemoji/1f3b5.svg'
-import book from '../../assets/twemoji/1f4d6.svg'
-import camera from '../../assets/twemoji/1f4f7.svg'
-import pray from '../../assets/twemoji/1f64f.svg'
-import done from '../../assets/twemoji/2705.svg'
+import music from '../../src/assets/twemoji/1f3b5.svg'
+import book from '../../src/assets/twemoji/1f4d6.svg'
+import camera from '../../src/assets/twemoji/1f4f7.svg'
+import pray from '../../src/assets/twemoji/1f64f.svg'
+import done from '../../src/assets/twemoji/2705.svg'
+import { copyText } from './clipboard.js'
 import AiIcon from './AiIcon.vue'
 import MessageView from './MessageView.vue'
 
@@ -106,13 +107,6 @@ function tokenLine(msg) {
   return parts.join(' · ')
 }
 
-async function copy(text) {
-  try {
-    await navigator.clipboard.writeText(text || '')
-  } catch {
-    /* буфер может быть закрыт */
-  }
-}
 </script>
 
 <template>
@@ -183,7 +177,7 @@ async function copy(text) {
             <MessageView v-if="msg.content" :text="msg.content" />
             <p v-else-if="streaming" class="ai-wait">Пишет…</p>
             <div v-if="msg.content" class="ai-acts">
-              <button class="ai-ib" type="button" aria-label="Копировать" @click="copy(msg.content)">
+              <button class="ai-ib" type="button" aria-label="Копировать" @click="copyText(msg.content)">
                 <AiIcon name="copy" />
               </button>
               <button

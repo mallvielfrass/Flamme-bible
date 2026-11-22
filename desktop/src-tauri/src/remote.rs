@@ -221,7 +221,7 @@ impl Remote {
         Ok(Self {
             base: parse_server(base)?,
             token: token.to_string(),
-            http: client(Duration::from_secs(30))?,
+            http: http_client(Duration::from_secs(30))?,
         })
     }
 
@@ -229,7 +229,7 @@ impl Remote {
         Ok(Self {
             base: parse_server(base)?,
             token: String::new(),
-            http: client(Duration::from_secs(300))?,
+            http: http_client(Duration::from_secs(300))?,
         })
     }
 
@@ -296,7 +296,7 @@ impl Remote {
         module: &crate::bible::BibleIdentity,
     ) -> Result<ModuleExists, String> {
         let files = crate::bible::read_upload(module)?;
-        let http = client(Duration::from_secs(180))?;
+        let http = http_client(Duration::from_secs(180))?;
         let mut form = reqwest::multipart::Form::new()
             .text("content_hash", module.content_hash.clone())
             .text("short_name", module.short_name.clone())
@@ -702,8 +702,20 @@ pub fn parse_failure(status: u16, text: &str) -> RemoteError {
     RemoteError::Message(message)
 }
 
-fn client(timeout: Duration) -> Result<reqwest::Client, String> {
+pub(crate) fn http_client(timeout: Duration) -> Result<reqwest::Client, String> {
+    build_client(timeout, true)
+}
+
+/// Без переходов по редиректу: токен чата не уходит на другой адрес.
+pub(crate) fn http_client_direct(timeout: Duration) -> Result<reqwest::Client, String> {
+    build_client(timeout, false)
+}
+
+fn build_client(timeout: Duration, follow: bool) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder().timeout(timeout);
+    if !follow {
+        builder = builder.redirect(reqwest::redirect::Policy::custom(|attempt| attempt.stop()));
+    }
     if let Ok(path) = std::env::var("FLAMMEBIBLE_CA") {
         if !path.is_empty() {
             let pem =

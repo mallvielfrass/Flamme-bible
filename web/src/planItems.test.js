@@ -9,6 +9,8 @@ import {
   importFormatFromName,
   itemStamp,
   moveItem,
+  planItemFromResult,
+  planTarget,
   planUpdatedLabel,
   songItem,
   textItem,
@@ -115,5 +117,33 @@ describe('plan items', () => {
     expect(itemStamp({ created_at: created.toISOString(), updated_at: updated.toISOString() }, now).text).toBe('изменён 20.11, 21:40')
     expect(itemStamp({ created_at: older.toISOString() }, now).text).toBe('создан 18.11.2025, 19:02')
     expect(itemStamp({}, now).text).toBe('не сохранён')
+  })
+})
+
+describe('plan items from chat results', () => {
+  it('turns a song and a verse into plan items and appends to a plan once', async () => {
+    const song = planItemFromResult({ kind: 'song', id: 'dim/book-1/fb-1', title: 'Песня', note: 'Сборник', body: '' })
+    expect(song).toMatchObject({ kind: 'song', song_id: 'fb-1', songbook_id: 'book-1', title: 'Песня', songbook_title: 'Сборник' })
+    const verse = planItemFromResult({ kind: 'verse', id: 'v', title: 'Ин. 3:16', note: '', body: 'Ибо так возлюбил', module_short_name: 'RST', book: 43, chapter: 3, verse: 16 })
+    expect(verse).toMatchObject({ kind: 'bible', module_short_name: 'RST', book: 43, chapter: 3, verse: 16, reference: 'Ин. 3:16', quote: 'Ибо так возлюбил' })
+    expect(planItemFromResult({ kind: 'verse', id: 'v', title: 'Ин. 3:16', body: 'текст' })).toMatchObject({ kind: 'text', caption: 'Ин. 3:16', quote: 'текст' })
+
+    let saved = null
+    const created = []
+    const target = planTarget({
+      list: async () => [{ id: 'p1', title: 'Воскресенье' }],
+      read: async () => ({ id: 'p1', title: 'Воскресенье', version: 2, items: [] }),
+      save: async (plan) => { saved = plan },
+      create: async (title, items) => { created.push({ title, items }) },
+    })
+    await target.add('p1', { kind: 'song', id: 'dim/book-1/fb-1', title: 'Песня', note: '' })
+    expect(saved.version).toBe(2)
+    expect(saved.items.map((item) => item.song_id)).toEqual(['fb-1'])
+    await target.create('Новый', { kind: 'song', id: 'dim/book-1/fb-1', title: 'Песня', note: '' })
+    expect(created[0].title).toBe('Новый')
+    expect(created[0].items).toHaveLength(1)
+
+    const full = planTarget({ read: async () => ({ id: 'p1', items: [song] }), save: async () => {} })
+    await expect(full.add('p1', { kind: 'song', id: 'dim/book-1/fb-1', title: 'Песня' })).rejects.toThrow('уже есть')
   })
 })

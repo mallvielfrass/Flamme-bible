@@ -1,12 +1,13 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { api, explain } from '../api'
-import { useSessionStore } from '../stores/session'
-import AppModal from '../../shared/components/AppModal.vue'
-import ConfirmDialog from '../../shared/components/ConfirmDialog.vue'
+import { explain } from '../http.js'
+import AppModal from '../components/AppModal.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
+const props = defineProps({
+  client: { type: Object, required: true },
+})
 const emit = defineEmits(['close'])
-const session = useSessionStore()
 
 const taskFields = [
   { key: 'chat', label: 'Чат' },
@@ -52,7 +53,7 @@ async function load(quiet = false) {
   if (!quiet) loading.value = true
   error.value = ''
   try {
-    const data = await api('/api/ai/providers', { token: session.token })
+    const data = await props.client.providers()
     providers.value = data.providers || []
     tasks.value = { ...fresh(), ...(data.tasks || {}) }
     off.value = false
@@ -81,23 +82,15 @@ async function saveProvider() {
   error.value = ''
   try {
     if (current.id) {
-      await api(`/api/ai/providers/${current.id}`, {
-        method: 'PATCH',
-        token: session.token,
-        body: { name: current.name, base_url: current.base_url },
-      })
+      await props.client.patchProvider(current.id, { name: current.name, base_url: current.base_url })
       if (current.token.trim()) {
-        await api(`/api/ai/providers/${current.id}/token`, {
-          method: 'PUT',
-          token: session.token,
-          body: { token: current.token },
-        })
+        await props.client.putProviderToken(current.id, { token: current.token })
       }
     } else {
-      await api('/api/ai/providers', {
-        method: 'POST',
-        token: session.token,
-        body: { name: current.name, base_url: current.base_url, token: current.token },
+      await props.client.createProvider({
+        name: current.name,
+        base_url: current.base_url,
+        token: current.token,
       })
     }
     form.value = null
@@ -119,7 +112,7 @@ async function removeProvider(provider) {
   busy.value = true
   error.value = ''
   try {
-    await api(`/api/ai/providers/${provider.id}`, { method: 'DELETE', token: session.token })
+    await props.client.deleteProvider(provider.id)
     if (modelsFor.value === provider.id) modelsFor.value = ''
     await load(true)
   } catch (err) {
@@ -133,7 +126,7 @@ async function testProvider(provider) {
   testing.value = provider.id
   error.value = ''
   try {
-    const data = await api(`/api/ai/providers/${provider.id}/test`, { method: 'POST', token: session.token })
+    const data = await props.client.testProvider(provider.id)
     results.value = {
       ...results.value,
       [provider.id]: data.ok
@@ -187,7 +180,7 @@ async function loadRemote(provider) {
   busy.value = true
   error.value = ''
   try {
-    const data = await api(`/api/ai/providers/${provider.id}/remote-models`, { token: session.token })
+    const data = await props.client.remoteModels(provider.id)
     remote.value = data.models || []
   } catch (err) {
     error.value = explain(err)
@@ -200,16 +193,12 @@ async function saveModels(provider) {
   busy.value = true
   error.value = ''
   try {
-    await api(`/api/ai/providers/${provider.id}/models`, {
-      method: 'PUT',
-      token: session.token,
-      body: draft.value.map((row) => ({
-        model: row.model,
-        display_name: row.display_name,
-        can_tools: Boolean(row.can_tools),
-        can_vision: Boolean(row.can_vision),
-      })),
-    })
+    await props.client.putModels(provider.id, draft.value.map((row) => ({
+      model: row.model,
+      display_name: row.display_name,
+      can_tools: Boolean(row.can_tools),
+      can_vision: Boolean(row.can_vision),
+    })))
     await load(true)
     const freshProvider = providers.value.find((item) => item.id === provider.id)
     if (freshProvider) openModels(freshProvider)
@@ -224,11 +213,7 @@ async function saveTasks() {
   busy.value = true
   error.value = ''
   try {
-    const data = await api('/api/ai/tasks', {
-      method: 'PUT',
-      token: session.token,
-      body: { ...fresh(), ...tasks.value },
-    })
+    const data = await props.client.putTasks({ ...fresh(), ...tasks.value })
     tasks.value = { ...fresh(), ...(data.tasks || {}) }
   } catch (err) {
     error.value = explain(err)
@@ -245,9 +230,9 @@ onMounted(load)
     <p v-if="loading" class="hint">Загрузка…</p>
     <p v-else-if="off" class="error">{{ error }}</p>
     <template v-else>
-      <div class="tabs">
-        <button class="tab" :class="{ on: tab === 'providers' }" type="button" @click="tab = 'providers'">Провайдеры</button>
-        <button class="tab" :class="{ on: tab === 'tasks' }" type="button" @click="tab = 'tasks'">Задачи</button>
+      <div class="ai-tabs">
+        <button class="ai-tab" :class="{ on: tab === 'providers' }" type="button" @click="tab = 'providers'">Провайдеры</button>
+        <button class="ai-tab" :class="{ on: tab === 'tasks' }" type="button" @click="tab = 'tasks'">Задачи</button>
       </div>
       <p v-if="error" class="error">{{ error }}</p>
       <div v-show="tab === 'providers'" class="ai-settings">

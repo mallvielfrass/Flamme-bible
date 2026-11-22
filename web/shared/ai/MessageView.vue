@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { markdownTree } from '../../markdown'
+import { markdownTree } from './markdown.js'
 import MdNode from './MdNode.vue'
 
 const props = defineProps({

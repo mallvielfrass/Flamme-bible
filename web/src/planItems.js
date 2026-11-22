@@ -60,6 +60,25 @@ export function bibleItemFromPassage(hit) {
   })
 }
 
+// Пункт ответа чата (песня или стих) как пункт плана.
+// Стих без короткого имени перевода становится заметкой со ссылкой и текстом.
+export function planItemFromResult(result) {
+  if (result.kind === 'song') {
+    const [, songbookId = '', ...rest] = String(result.id || '').split('/')
+    return songItem({
+      fbid: rest.join('/') || result.id,
+      songbook_id: songbookId,
+      title: result.title,
+      songbook_title: result.note,
+    })
+  }
+  const quote = result.body || ''
+  if (moduleNameOk(result.module_short_name || '')) {
+    return bibleItem({ ...result, reference: result.title, quote })
+  }
+  return textItem({ caption: result.title, quote })
+}
+
 export function textItem(fields) {
   const caption = (fields.caption || '').trim()
   const quote = (fields.quote || '').trim()
@@ -209,5 +228,23 @@ export function itemStamp(item, now = new Date()) {
   return {
     text: `${changed ? 'изменён' : 'создан'} ${clock(when, now, false)}`,
     title: clock(when, now, true),
+  }
+}
+
+// Куда чат кладёт пункт «В план». io — запросы сайта или клиента:
+// list() → планы, read(id) → план с items, save(plan) → сохранить items, create(title, items).
+export function planTarget(io) {
+  return {
+    list: io.list,
+    async add(planId, result) {
+      const plan = await io.read(planId)
+      const before = plan.items || []
+      const items = appendItems(before, [planItemFromResult(result)], { kinds: ['song', 'bible', 'text'] })
+      if (items.length === before.length) throw new Error('Эта песня уже есть в плане.')
+      await io.save({ ...plan, items })
+    },
+    async create(title, result) {
+      await io.create(title, [planItemFromResult(result)])
+    },
   }
 }
