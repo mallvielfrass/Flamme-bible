@@ -193,7 +193,7 @@ async fn create_community(name: String) -> Result<remote::Dimension, String> {
         .await
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn open_visio(path: String) -> Result<Scan, String> {
     let (dir, mut cfg) = load_config()?;
     let scan = visio::open_location(Path::new(&path))?;
@@ -769,7 +769,7 @@ async fn gather() -> Result<(std::path::PathBuf, config::Config, Gathered), Stri
     Ok((dir, cfg, Gathered(input, cursor, plan_warning)))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn create_plan(name: String, items: Vec<PlanItem>) -> Result<visio::PlanInfo, String> {
     let (_, cfg) = load_config()?;
     if cfg.visio_path.is_empty() {
@@ -813,7 +813,7 @@ fn set_plan_encoding(windows1251: bool) -> Result<config::PublicSettings, String
     Ok(cfg.public())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn repair_plan_encoding(path: String) -> Result<visio::Scan, String> {
     let (_, cfg) = load_config()?;
     if cfg.visio_path.is_empty() {
