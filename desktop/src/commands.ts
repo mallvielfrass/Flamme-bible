@@ -49,6 +49,8 @@ export interface SongRow {
   local_lyrics: string;
   remote_title: string;
   remote_lyrics: string;
+  server_id: string;
+  absent: boolean;
 }
 
 export interface PlanRow {
@@ -59,12 +61,16 @@ export interface PlanRow {
   summary: string;
   local_summary: string;
   remote_summary: string;
+  server_id: string;
+  absent: boolean;
 }
 
 export interface Preview {
   songs: SongRow[];
   plans: PlanRow[];
   warnings: string[];
+  grouped: { title: string; note: string }[];
+  skipped: { kind: string; id: string; title: string }[];
 }
 
 export interface PlanItem {
@@ -127,6 +133,8 @@ export const api = {
   preview: () => invoke<Preview>("preview_sync"),
   start: (songs: SongDecision[], plans: PlanDecision[]) =>
     invoke<{ notes: string[]; backups: string[] }>("start_sync", { request: { songs, plans } }),
+  setSkipped: (kind: "songbook" | "plan", id: string, skip: boolean) =>
+    invoke<void>("set_skipped", { kind, id, skip }),
   createPlan: (name: string, items: PlanItem[]) => invoke<Scan["plans"][number]>("create_plan", { name, items }),
   searchSongs: (query: string) => invoke<SongHit[]>("search_songs", { query }),
   checkUpdate: () => invoke<UpdateView>("check_update"),
