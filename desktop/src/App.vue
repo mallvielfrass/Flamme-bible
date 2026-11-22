@@ -11,7 +11,7 @@ import SyncView from "./components/SyncView.vue";
 import PlansTab from "./plans/PlansTab.vue";
 import UpdatesTab from "./updates/UpdatesTab.vue";
 import { api, type BibleLink, type Dimension, type Preview, type Progress, type Scan, type Settings, type SongRow } from "./commands";
-import { adoptionKey, decisionsFrom, groupKey, hasUnsyncedChanges, planKey, songKey, syncReady, type Choice } from "./syncState";
+import { adoptionKey, closeDecision, decisionsFrom, groupKey, planKey, songKey, syncReady, type Choice } from "./syncState";
 
 const tab = ref<"sync" | "plans" | "updates" | "ai">(
   import.meta.env.DEV && new URLSearchParams(location.search).has("updates-preview") ? "updates" : "sync",
@@ -251,29 +251,28 @@ async function start() {
   }
 }
 
-async function unsyncedNow(): Promise<boolean> {
-  if (busy.value === "sync") return true;
-  if (settings.value.logged_in && scan.value && !scan.value.needs_choice) {
-    try {
-      preview.value = await api.preview();
-    } catch {
-      // Остаётся последний удачный список.
-    }
-  }
-  return hasUnsyncedChanges(preview.value);
-}
-
-async function onCloseRequested() {
-  if (closeAsk.value || closeBusy.value) return;
-  closeBusy.value = true;
+async function closeNow() {
+  closeAsk.value = false;
   try {
-    await startBoot();
-    if (await unsyncedNow()) closeAsk.value = true;
-    else await api.finishClose();
+    await api.finishClose();
   } catch (err) {
     const text = message(err);
     if (settings.value.logged_in) error.value = text;
     else authError.value = text;
+  }
+}
+
+// Закрытие не ждёт сеть: решение берётся из последней сверки. Повторный клик, пока идёт закрытие, повторяет finishClose.
+async function onCloseRequested() {
+  if (closeAsk.value) return;
+  if (closeBusy.value) {
+    await closeNow();
+    return;
+  }
+  closeBusy.value = true;
+  try {
+    if (closeDecision(busy.value === "sync", preview.value) === "ask") closeAsk.value = true;
+    else await closeNow();
   } finally {
     closeBusy.value = false;
   }
@@ -286,15 +285,8 @@ function goSync() {
   if (syncReady(preview.value, chosen.value, adopted.value)) void start();
 }
 
-async function closeAnyway() {
-  closeAsk.value = false;
-  try {
-    await api.finishClose();
-  } catch (err) {
-    const text = message(err);
-    if (settings.value.logged_in) error.value = text;
-    else authError.value = text;
-  }
+function closeAnyway() {
+  void closeNow();
 }
 
 onMounted(() => {
