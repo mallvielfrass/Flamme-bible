@@ -29,6 +29,8 @@ cmd/cli/cli
 *.sqlite3
 
 # сторонние модули и архивы VisioBible (в репозиторий не входят)
+# загруженные модули Библии, если MEDIA_DIR указывает внутрь дерева
+bible-modules/
 visioBible/
 VisioBible*
 *.vbm

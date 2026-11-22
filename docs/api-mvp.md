@@ -153,6 +153,10 @@ songbook_section_songs (section_id, songbook_id, fbid, position)
 
 `POST /api/modules` — `short_name`, `title`, необязательный `dimension_id`. Статус `draft`.
 
+`POST /api/modules/exists` — сессия. Тело `content_hash`, `short_name`, `title`. Хеш — SHA-256 канонического текста модуля BibleQuote: короткое имя, название, шапка `bibleqt.ini` и SHA-256 файлов книг по порядку `PathName`. `BibleId`, `BookHash`, `visiobible.cache` и `visiobible.idx` в хеш не входят. Ответ `{"exists":false}` или `{"exists":true,"id","short_name","title","content_hash"}`. Чужое имя при том же хеше — `exists:false`.
+
+`POST /api/modules/upload` — сессия, `multipart/form-data`: поля `content_hash`, `short_name`, `title` и файлы `file` (`bibleqt.ini` и книги). Если модуль с этим хешем и именем уже есть, файл не сохраняется второй раз, ответ `{"exists":true,"id",...}` без `uploaded`. Иначе создаётся черновик владельца и файлы ложатся в `MEDIA_DIR/bible-modules/{id}/`. Ответ тогда с `"uploaded":true`. Без `MEDIA_DIR` — `503`. Тело больше 64 МиБ плюс служебный мегабайт, файл больше 16 МиБ или больше 80 файлов — `413`. Путь с `..` и файл, которого нет в `bibleqt.ini`, — `400`. В репозиторий эти файлы не попадают.
+
 `GET /api/modules` — свои и общинные. `GET /api/modules/{id}` — если есть доступ.
 
 `POST /api/modules/{id}/submit` и `POST /api/songbooks/{id}/submit` переводят `draft` или `rejected` в `pending`. Для сборника по-прежнему работает `POST /songbooks/{id}/publish`.

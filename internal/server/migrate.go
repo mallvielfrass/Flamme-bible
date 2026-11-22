@@ -44,6 +44,9 @@ func Migrate(ctx context.Context, db *pgxpool.Pool) error {
 	if err := migrateEmbedQueue(ctx, db); err != nil {
 		return err
 	}
+	if err := migrateBibleModules(ctx, db); err != nil {
+		return err
+	}
 	return migrateAI(ctx, db)
 }
 

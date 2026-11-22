@@ -48,6 +48,8 @@ func (s *Server) mountMVP(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/bible/semantic", s.searchBibleSemantic)
 
 	mux.HandleFunc("POST /api/modules", s.createModule)
+	mux.HandleFunc("POST /api/modules/exists", s.bibleModuleExists)
+	mux.HandleFunc("POST /api/modules/upload", s.uploadBibleModule)
 	mux.HandleFunc("GET /api/modules", s.listModules)
 	mux.HandleFunc("GET /api/modules/{id}", s.getModule)
 	mux.HandleFunc("POST /api/modules/{id}/submit", s.submitModule)
@@ -123,6 +125,9 @@ func (s *Server) dispatch(next http.Handler) http.Handler {
 		}
 		if r.Method == http.MethodPost && r.URL.Path == "/api/admin/embed/gguf" {
 			limit = ggufMaxBytes()
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/modules/upload" {
+			limit = s.moduleBodyLimit()
 		}
 		http.MaxBytesHandler(next, limit).ServeHTTP(w, r)
 	})
