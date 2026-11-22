@@ -1,9 +1,10 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+use crate::groups::{self, Applied};
 use crate::plans::{self, PlanItem};
-use crate::visio::{self, Song};
+use crate::visio::{self, Group, Song};
 
 /// Last synced text is the baseline. A side that still matches it did not change,
 /// so the other side can be applied. If both differ, the operator chooses.
@@ -66,7 +67,8 @@ pub struct BookIn {
     pub base: Vec<Song>,
     pub server_id: String,
     pub book_fbid: String,
-    pub has_groups: bool,
+    pub groups: Vec<Group>,
+    pub base_groups: Vec<groups::Baseline>,
 }
 
 #[derive(Clone, Debug)]
@@ -85,6 +87,7 @@ pub struct RemoteBook {
     pub header_title: String,
     pub songs: Vec<Song>,
     pub order: Vec<String>,
+    pub sections: Vec<groups::Section>,
 }
 
 #[derive(Clone, Debug)]
@@ -142,12 +145,6 @@ pub struct PlanRow {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct GroupedBook {
-    pub title: String,
-    pub note: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
 pub struct SkippedRow {
     pub kind: String,
     pub id: String,
@@ -155,11 +152,22 @@ pub struct SkippedRow {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct GroupRow {
+    pub book_path: String,
+    pub book_title: String,
+    pub section_id: String,
+    pub name: String,
+    pub action: String,
+    pub local_name: String,
+    pub remote_name: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct Preview {
     pub songs: Vec<SongRow>,
     pub plans: Vec<PlanRow>,
+    pub groups: Vec<GroupRow>,
     pub warnings: Vec<String>,
-    pub grouped: Vec<GroupedBook>,
     pub skipped: Vec<SkippedRow>,
 }
 
@@ -177,6 +185,13 @@ pub struct SongDecision {
 #[derive(Clone, Debug, Deserialize)]
 pub struct PlanDecision {
     pub key: String,
+    pub choice: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct GroupDecision {
+    pub book_path: String,
+    pub section_id: String,
     pub choice: String,
 }
 
@@ -200,6 +215,9 @@ pub struct BookWork {
     pub songs: Vec<Song>,
     pub push: Vec<Song>,
     pub order: Vec<String>,
+    pub groups: Vec<Group>,
+    pub group_ops: Vec<Applied>,
+    pub group_state: Vec<Applied>,
 }
 
 #[derive(Clone, Debug)]
@@ -226,15 +244,12 @@ pub struct Outcome {
 struct Analysis {
     songs: Vec<SongRow>,
     plans: Vec<PlanRow>,
+    groups: Vec<GroupRow>,
     warnings: Vec<String>,
-    grouped: Vec<GroupedBook>,
     skipped: Vec<SkippedRow>,
     books: Vec<BookWork>,
     plan_work: Vec<PlanWork>,
 }
-
-const GROUPED_NOTE: &str =
-    "Группы в .vbm, пока не перезаписывается. Позже свяжем их с разделами сервера.";
 
 struct SongFact {
     id: String,
@@ -246,12 +261,12 @@ struct SongFact {
 
 pub fn preview(input: &Input) -> Result<Preview, String> {
     let mut ids = String::new;
-    let analysis = analyze(input, &[], &[], false, &mut ids)?;
+    let analysis = analyze(input, &[], &[], &[], false, &mut ids)?;
     Ok(Preview {
         songs: analysis.songs,
         plans: analysis.plans,
+        groups: analysis.groups,
         warnings: analysis.warnings,
-        grouped: analysis.grouped,
         skipped: analysis.skipped,
     })
 }
@@ -260,9 +275,17 @@ pub fn apply(
     input: &Input,
     song_choices: &[SongDecision],
     plan_choices: &[PlanDecision],
+    group_choices: &[GroupDecision],
     mut ids: impl FnMut() -> String,
 ) -> Result<Outcome, String> {
-    let analysis = analyze(input, song_choices, plan_choices, true, &mut ids)?;
+    let analysis = analyze(
+        input,
+        song_choices,
+        plan_choices,
+        group_choices,
+        true,
+        &mut ids,
+    )?;
     Ok(Outcome {
         books: analysis.books,
         plans: analysis.plan_work,
@@ -274,30 +297,35 @@ fn analyze(
     input: &Input,
     song_choices: &[SongDecision],
     plan_choices: &[PlanDecision],
+    group_choices: &[GroupDecision],
     require: bool,
     ids: &mut impl FnMut() -> String,
 ) -> Result<Analysis, String> {
     let warnings = Vec::new();
     let mut rows = Vec::new();
-    let mut grouped = Vec::new();
+    let mut group_rows = Vec::new();
     let mut skipped = Vec::new();
     let mut book_work = Vec::new();
     let mut used_remote = BTreeSet::new();
     for book in &input.books {
-        if book.has_groups {
-            grouped.push(GroupedBook {
-                title: display_title(&book.title, "Сборник"),
-                note: GROUPED_NOTE.into(),
-            });
-            continue;
-        }
         let remote = match_book(book, &input.remote_books, &mut used_remote);
         let facts = song_facts(book, remote)?;
         for fact in &facts {
             rows.push(song_row(book, fact, false));
         }
         if require {
-            book_work.push(book_work_from(book, remote, &facts, song_choices, ids)?);
+            let mut work = book_work_from(book, remote, &facts, song_choices, ids)?;
+            attach_groups(
+                book,
+                remote,
+                Some(&mut work),
+                &mut group_rows,
+                group_choices,
+                ids,
+            )?;
+            book_work.push(work);
+        } else {
+            attach_groups(book, remote, None, &mut group_rows, group_choices, ids)?;
         }
     }
     for remote in &input.remote_books {
@@ -321,13 +349,25 @@ fn analyze(
             rows.push(song_row(&book, fact, true));
         }
         if require {
-            book_work.push(book_work_from(
+            let mut work = book_work_from(&book, Some(remote), &facts, song_choices, ids)?;
+            attach_groups(
                 &book,
                 Some(remote),
-                &facts,
-                song_choices,
+                Some(&mut work),
+                &mut group_rows,
+                group_choices,
                 ids,
-            )?);
+            )?;
+            book_work.push(work);
+        } else {
+            attach_groups(
+                &book,
+                Some(remote),
+                None,
+                &mut group_rows,
+                group_choices,
+                ids,
+            )?;
         }
     }
     let mut plan_rows = Vec::new();
@@ -366,8 +406,8 @@ fn analyze(
     Ok(Analysis {
         songs: rows,
         plans: plan_rows,
+        groups: group_rows,
         warnings,
-        grouped,
         skipped,
         books: book_work,
         plan_work,
@@ -380,6 +420,174 @@ fn display_title(title: &str, fallback: &str) -> String {
     } else {
         title.into()
     }
+}
+
+fn attach_groups(
+    book: &BookIn,
+    remote: Option<&RemoteBook>,
+    mut work: Option<&mut BookWork>,
+    rows: &mut Vec<GroupRow>,
+    choices: &[GroupDecision],
+    ids: &mut impl FnMut() -> String,
+) -> Result<(), String> {
+    let allowed = if let Some(work) = work.as_ref() {
+        alive(&work.songs)
+    } else {
+        let mut ids = alive(&book.songs);
+        if let Some(remote) = remote {
+            ids.extend(alive(&remote.songs));
+        }
+        ids
+    };
+    let local = sides_from(book, &allowed);
+    let sections = remote
+        .map(|remote| filter_sections(&remote.sections, &allowed))
+        .unwrap_or_default();
+    let choices: Vec<groups::Choice> = choices
+        .iter()
+        .filter(|choice| choice.book_path == book.path)
+        .map(|choice| groups::Choice {
+            section_id: choice.section_id.clone(),
+            choice: choice.choice.clone(),
+        })
+        .collect();
+    let applied = groups::merge(
+        &local,
+        &sections,
+        &book.base_groups,
+        &choices,
+        work.is_some(),
+    )
+    .map_err(|err| format!("Сборник «{}»: {err}", book.title))?;
+    for row in &applied {
+        rows.push(GroupRow {
+            book_path: book.path.clone(),
+            book_title: book.title.clone(),
+            section_id: row.section_id.clone(),
+            name: row.name.clone(),
+            action: row.action.to_string(),
+            local_name: row.local_name.clone(),
+            remote_name: row.remote_name.clone(),
+        });
+    }
+    if let Some(work) = work.as_mut() {
+        let file_groups = file_groups(&applied, &work.songs);
+        if semantic(&book.groups, &book.songs) != semantic_applied(&applied) {
+            work.write = true;
+        }
+        work.groups = file_groups;
+        work.group_ops = applied
+            .iter()
+            .filter(|row| row.create || row.rename || row.push_songs)
+            .cloned()
+            .collect();
+        work.group_state = applied;
+        if work.server_id.is_empty()
+            && work
+                .group_ops
+                .iter()
+                .any(|row| row.create || row.rename || row.push_songs)
+        {
+            if work.book_fbid.is_empty() {
+                work.book_fbid = ids();
+            }
+            work.create = true;
+        }
+    }
+    Ok(())
+}
+
+fn alive(songs: &[Song]) -> BTreeSet<String> {
+    songs
+        .iter()
+        .filter(|song| !song.deleted && !song.fbid.is_empty())
+        .map(|song| song.fbid.clone())
+        .collect()
+}
+
+fn sides_from(book: &BookIn, allowed: &BTreeSet<String>) -> Vec<groups::Side> {
+    book.groups
+        .iter()
+        .map(|group| {
+            let mut songs = Vec::new();
+            for index in &group.songs {
+                let Some(song) = book.songs.get(*index as usize) else {
+                    continue;
+                };
+                if allowed.contains(&song.fbid) && !songs.contains(&song.fbid) {
+                    songs.push(song.fbid.clone());
+                }
+            }
+            groups::Side {
+                name: group.name.clone(),
+                songs,
+            }
+        })
+        .collect()
+}
+
+fn filter_sections(
+    sections: &[groups::Section],
+    allowed: &BTreeSet<String>,
+) -> Vec<groups::Section> {
+    sections
+        .iter()
+        .map(|section| groups::Section {
+            id: section.id.clone(),
+            name: section.name.clone(),
+            songs: section
+                .songs
+                .iter()
+                .filter(|id| allowed.contains(*id))
+                .cloned()
+                .collect(),
+        })
+        .collect()
+}
+
+fn file_groups(applied: &[Applied], songs: &[Song]) -> Vec<Group> {
+    let mut at = BTreeMap::new();
+    for (index, song) in songs.iter().enumerate() {
+        if !song.deleted && !song.fbid.is_empty() {
+            at.entry(song.fbid.clone()).or_insert(index as u32);
+        }
+    }
+    applied
+        .iter()
+        .map(|row| Group {
+            name: row.name.clone(),
+            songs: row
+                .songs
+                .iter()
+                .filter_map(|id| at.get(id).copied())
+                .collect(),
+        })
+        .collect()
+}
+
+fn semantic(groups: &[Group], songs: &[Song]) -> Vec<(String, Vec<String>)> {
+    groups
+        .iter()
+        .map(|group| {
+            let mut ids = Vec::new();
+            for index in &group.songs {
+                let Some(song) = songs.get(*index as usize) else {
+                    continue;
+                };
+                if !song.fbid.is_empty() && !ids.contains(&song.fbid) {
+                    ids.push(song.fbid.clone());
+                }
+            }
+            (group.name.trim().to_string(), ids)
+        })
+        .collect()
+}
+
+fn semantic_applied(applied: &[Applied]) -> Vec<(String, Vec<String>)> {
+    applied
+        .iter()
+        .map(|row| (row.name.clone(), row.songs.clone()))
+        .collect()
 }
 
 fn song_facts(book: &BookIn, remote: Option<&RemoteBook>) -> Result<Vec<SongFact>, String> {
@@ -562,6 +770,9 @@ fn book_work_from(
         order: result.iter().map(|song| song.fbid.clone()).collect(),
         songs: result,
         push,
+        groups: Vec::new(),
+        group_ops: Vec::new(),
+        group_state: Vec::new(),
     })
 }
 
@@ -695,7 +906,8 @@ fn remote_as_local(remote: &RemoteBook, modules_dir: &str) -> BookIn {
         base: Vec::new(),
         server_id: remote.server_id.clone(),
         book_fbid: remote.fbid.clone(),
-        has_groups: false,
+        groups: Vec::new(),
+        base_groups: Vec::new(),
     }
 }
 
@@ -929,7 +1141,8 @@ mod tests {
             base,
             server_id: "server-book".into(),
             book_fbid: "book".into(),
-            has_groups: false,
+            groups: Vec::new(),
+            base_groups: Vec::new(),
         }
     }
 
@@ -949,6 +1162,7 @@ mod tests {
             header_title: "Test".into(),
             songs,
             order: Vec::new(),
+            sections: Vec::new(),
         }
     }
 
@@ -1008,7 +1222,7 @@ mod tests {
             skip_songbooks: BTreeSet::new(),
             skip_plans: BTreeSet::new(),
         };
-        let err = apply(&input, &[], &[], String::new).unwrap_err();
+        let err = apply(&input, &[], &[], &[], String::new).unwrap_err();
         assert!(err.contains("выбрать"));
         let keep = apply(
             &input,
@@ -1019,6 +1233,7 @@ mod tests {
                 title: String::new(),
                 lyrics: String::new(),
             }],
+            &[],
             &[],
             String::new,
         )
@@ -1035,6 +1250,7 @@ mod tests {
                 lyrics: String::new(),
             }],
             &[],
+            &[],
             String::new,
         )
         .unwrap();
@@ -1049,6 +1265,7 @@ mod tests {
                 title: String::new(),
                 lyrics: String::new(),
             }],
+            &[],
             &[],
             || "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee".into(),
         )
@@ -1069,6 +1286,7 @@ mod tests {
                 title: "Своя".into(),
                 lyrics: "текст".into(),
             }],
+            &[],
             &[],
             String::new,
         )
@@ -1167,7 +1385,7 @@ mod tests {
         };
         let row = &preview(&input).unwrap().plans[0];
         assert_eq!(row.action, "push_update");
-        let outcome = apply(&input, &[], &[], String::new).unwrap();
+        let outcome = apply(&input, &[], &[], &[], String::new).unwrap();
         assert!(outcome.plans[0].push);
         assert_eq!(outcome.plans[0].version, 2);
     }
@@ -1194,7 +1412,7 @@ mod tests {
             skip_songbooks: BTreeSet::new(),
             skip_plans: BTreeSet::new(),
         };
-        let outcome = apply(&input, &[], &[], String::new).unwrap();
+        let outcome = apply(&input, &[], &[], &[], String::new).unwrap();
         let ids = |songs: &[Song]| {
             songs
                 .iter()
@@ -1230,7 +1448,7 @@ mod tests {
             skip_songbooks: BTreeSet::new(),
             skip_plans: BTreeSet::new(),
         };
-        let outcome = apply(&input, &[], &[], String::new).unwrap();
+        let outcome = apply(&input, &[], &[], &[], String::new).unwrap();
         let ids: Vec<_> = outcome.books[0]
             .songs
             .iter()
@@ -1257,7 +1475,7 @@ mod tests {
             skip_songbooks: BTreeSet::new(),
             skip_plans: BTreeSet::new(),
         };
-        let outcome = apply(&input, &[], &[], String::new).unwrap();
+        let outcome = apply(&input, &[], &[], &[], String::new).unwrap();
         let ids: Vec<_> = outcome.books[0]
             .songs
             .iter()
@@ -1267,24 +1485,6 @@ mod tests {
     }
 
     #[test]
-    fn grouped_book_is_listed_and_not_written() {
-        let mut grouped = book(vec![song(A, "А", "текст")], vec![]);
-        grouped.has_groups = true;
-        grouped.title = "Детские песни".into();
-        let input = Input {
-            books: vec![grouped],
-            ..empty_input()
-        };
-        let shown = preview(&input).unwrap();
-        assert!(shown.songs.is_empty());
-        assert!(shown.warnings.is_empty());
-        assert_eq!(shown.grouped.len(), 1);
-        assert_eq!(shown.grouped[0].title, "Детские песни");
-        assert!(shown.grouped[0].note.contains("Группы"));
-        let outcome = apply(&input, &[], &[], String::new).unwrap();
-        assert!(outcome.books.is_empty());
-    }
-
     #[test]
     fn absent_book_and_plan_can_be_skipped_without_a_write() {
         let mut remote_book = remote(vec![song(A, "А", "текст")]);
@@ -1313,7 +1513,7 @@ mod tests {
         assert_eq!(shown.songs[0].action, "pull_add");
         assert!(shown.plans[0].absent);
         assert_eq!(shown.plans[0].server_id, "remote-plan");
-        assert!(apply(&input, &[], &[], String::new).unwrap().books[0].write);
+        assert!(apply(&input, &[], &[], &[], String::new).unwrap().books[0].write);
 
         input.skip_songbooks.insert("remote-book".into());
         input.skip_plans.insert("remote-plan".into());
@@ -1321,9 +1521,90 @@ mod tests {
         assert!(shown.songs.is_empty());
         assert!(shown.plans.is_empty());
         assert_eq!(shown.skipped.len(), 2);
-        let outcome = apply(&input, &[], &[], String::new).unwrap();
+        let outcome = apply(&input, &[], &[], &[], String::new).unwrap();
         assert!(outcome.books.is_empty());
         assert!(outcome.plans.is_empty());
+    }
+
+    #[test]
+    fn groups_union_by_name_and_conflict_only_when_both_renamed() {
+        let song_a = song(A, "А", "текст");
+        let song_b = song(B, "Б", "текст");
+        let mut local = book(
+            vec![song_a.clone(), song_b.clone()],
+            vec![song_a.clone(), song_b.clone()],
+        );
+        local.groups = vec![Group {
+            name: "Хор А".into(),
+            songs: vec![0],
+        }];
+        local.base_groups = vec![groups::Baseline {
+            section_id: "sec-1".into(),
+            name: "Хор".into(),
+            songs: vec![A.into()],
+        }];
+        let mut remote_book = remote(vec![song_a, song_b]);
+        remote_book.sections = vec![groups::Section {
+            id: "sec-1".into(),
+            name: "Хор Б".into(),
+            songs: vec![A.into(), B.into()],
+        }];
+        let input = Input {
+            books: vec![local],
+            remote_books: vec![remote_book],
+            ..empty_input()
+        };
+        let shown = preview(&input).unwrap();
+        assert!(shown.warnings.is_empty());
+        assert_eq!(shown.groups[0].action, "conflict");
+        assert_eq!(shown.groups[0].local_name, "Хор А");
+        assert_eq!(shown.groups[0].remote_name, "Хор Б");
+        assert!(apply(&input, &[], &[], &[], String::new).is_err());
+        let outcome = apply(
+            &input,
+            &[],
+            &[],
+            &[GroupDecision {
+                book_path: "book.vbm".into(),
+                section_id: "sec-1".into(),
+                choice: "keep_local".into(),
+            }],
+            String::new,
+        )
+        .unwrap();
+        assert!(outcome.books[0].write);
+        assert_eq!(outcome.books[0].groups[0].name, "Хор А");
+        assert_eq!(outcome.books[0].groups[0].songs, vec![0, 1]);
+        assert!(outcome.books[0].group_ops[0].rename);
+        assert_eq!(
+            outcome.books[0].group_state[0].songs,
+            vec![A.to_string(), B.to_string()]
+        );
+
+        let mut same = book(vec![song(A, "А", "текст")], vec![song(A, "А", "текст")]);
+        same.groups = vec![Group {
+            name: "Хор".into(),
+            songs: vec![0],
+        }];
+        same.base_groups = vec![groups::Baseline {
+            section_id: "sec-1".into(),
+            name: "Хор".into(),
+            songs: vec![A.into()],
+        }];
+        let mut server = remote(vec![song(A, "А", "текст"), song(B, "Б", "текст")]);
+        server.sections = vec![groups::Section {
+            id: "sec-1".into(),
+            name: "Хор".into(),
+            songs: vec![B.into()],
+        }];
+        let input = Input {
+            books: vec![same],
+            remote_books: vec![server],
+            ..empty_input()
+        };
+        let row = &preview(&input).unwrap().groups[0];
+        assert_eq!(row.action, "push_update");
+        assert_ne!(row.action, "conflict");
     }
 
     #[test]

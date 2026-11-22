@@ -9,7 +9,7 @@ import SyncView from "./components/SyncView.vue";
 import PlansTab from "./plans/PlansTab.vue";
 import UpdatesTab from "./updates/UpdatesTab.vue";
 import { api, type Dimension, type Preview, type Progress, type Scan, type Settings, type SongRow } from "./commands";
-import { adoptionKey, decisionsFrom, hasUnsyncedChanges, planKey, songKey, syncReady, type Choice } from "./syncState";
+import { adoptionKey, decisionsFrom, groupKey, hasUnsyncedChanges, planKey, songKey, syncReady, type Choice } from "./syncState";
 
 const tab = ref<"sync" | "plans" | "updates">(
   import.meta.env.DEV && new URLSearchParams(location.search).has("updates-preview") ? "updates" : "sync",
@@ -203,6 +203,10 @@ function onPlanChoice(key: string, choice: "keep_local" | "take_server" | "keep_
   remember(planKey(key), { kind: choice });
 }
 
+function onGroupChoice(bookPath: string, sectionId: string, choice: "keep_local" | "take_server") {
+  remember(groupKey(bookPath, sectionId), { kind: choice });
+}
+
 function remember(key: string, choice: Choice) {
   chosen.value = { ...chosen.value, [key]: choice };
 }
@@ -212,9 +216,9 @@ async function start() {
   busy.value = "sync";
   error.value = "";
   progress.value = null;
-  const payload = decisionsFrom(chosen.value, preview.value.songs, preview.value.plans);
+  const payload = decisionsFrom(chosen.value, preview.value.songs, preview.value.plans, preview.value.groups);
   try {
-    const report = await api.start(payload.songs, payload.plans);
+    const report = await api.start(payload.songs, payload.plans, payload.groups);
     for (const line of report.notes) note(line);
     if (report.backups.length) note("Копии .bak сохранены рядом с изменёнными файлами.");
     if (settings.value.visio_path) scan.value = await api.openVisio(settings.value.visio_path);
@@ -330,6 +334,7 @@ onMounted(() => {
         @start="start"
         @open-conflict="conflict = $event"
         @resolve-plan="onPlanChoice"
+        @resolve-group="onGroupChoice"
         @adopt="adopt"
         @skip="(kind, id) => rememberSkip(kind, id, true)"
         @restore="(kind, id) => rememberSkip(kind, id, false)"

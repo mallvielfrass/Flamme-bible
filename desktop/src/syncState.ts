@@ -20,6 +20,10 @@ export function planKey(key: string): string {
   return JSON.stringify(["plan", key]);
 }
 
+export function groupKey(bookPath: string, sectionId: string): string {
+  return JSON.stringify(["group", bookPath, sectionId]);
+}
+
 export function countPhrase(count: number, one: string, few: string, many: string): string {
   const mod10 = count % 10;
   const mod100 = count % 100;
@@ -108,10 +112,12 @@ export function hasUnsyncedChanges(
 export function conflictRows(
   songs: { action: string; book_path: string; fbid: string }[],
   plans: { action: string; key: string }[],
+  groups: { action: string; book_path: string; section_id: string }[] = [],
 ): { action: string; key: string }[] {
   return [
     ...songs.filter((row) => row.action === "conflict").map((row) => ({ action: row.action, key: songKey(row.book_path, row.fbid) })),
     ...plans.filter((row) => row.action === "conflict").map((row) => ({ action: row.action, key: planKey(row.key) })),
+    ...groups.filter((row) => row.action === "conflict").map((row) => ({ action: row.action, key: groupKey(row.book_path, row.section_id) })),
   ];
 }
 
@@ -128,11 +134,18 @@ export interface PlanDecision {
   choice: string;
 }
 
+export interface GroupDecision {
+  book_path: string;
+  section_id: string;
+  choice: string;
+}
+
 export function decisionsFrom(
   chosen: Record<string, Choice>,
   songs: { book_path: string; fbid: string; action: string }[],
   plans: { key: string; action: string }[],
-): { songs: SongDecision[]; plans: PlanDecision[] } {
+  groups: { book_path: string; section_id: string; action: string }[] = [],
+): { songs: SongDecision[]; plans: PlanDecision[]; groups: GroupDecision[] } {
   const songDecisions: SongDecision[] = [];
   for (const song of songs) {
     if (song.action !== "conflict") continue;
@@ -153,7 +166,14 @@ export function decisionsFrom(
     if (!choice || choice.kind === "manual" || !choiceReady(choice)) continue;
     planDecisions.push({ key: plan.key, choice: choice.kind });
   }
-  return { songs: songDecisions, plans: planDecisions };
+  const groupDecisions: GroupDecision[] = [];
+  for (const group of groups) {
+    if (group.action !== "conflict") continue;
+    const choice = chosen[groupKey(group.book_path, group.section_id)];
+    if (!choice || choice.kind === "manual" || choice.kind === "keep_both" || !choiceReady(choice)) continue;
+    groupDecisions.push({ book_path: group.book_path, section_id: group.section_id, choice: choice.kind });
+  }
+  return { songs: songDecisions, plans: planDecisions, groups: groupDecisions };
 }
 
 export interface PreviewSong {
@@ -177,9 +197,14 @@ export interface PreviewPlan {
   remote_summary: string;
 }
 
-export interface PreviewGrouped {
-  title: string;
-  note: string;
+export interface PreviewGroup {
+  book_path: string;
+  book_title: string;
+  section_id: string;
+  name: string;
+  action: string;
+  local_name: string;
+  remote_name: string;
 }
 
 export interface PreviewSkipped {
@@ -191,12 +216,12 @@ export interface PreviewSkipped {
 export interface PreviewData {
   songs: PreviewSong[];
   plans: PreviewPlan[];
-  grouped: PreviewGrouped[];
+  groups: PreviewGroup[];
   skipped: PreviewSkipped[];
 }
 
 export type RowTone = "push" | "pull" | "conflict" | "skip" | "ok";
-export type RowMode = "compare" | "adopt" | "choose" | "plain";
+export type RowMode = "compare" | "adopt" | "choose" | "name" | "plain";
 
 export interface ListedRow {
   key: string;
@@ -208,7 +233,7 @@ export interface ListedRow {
   aside: string;
   mode: RowMode;
   serverId: string;
-  kind: "songbook" | "plan";
+  kind: "songbook" | "plan" | "group";
   conflictId: string;
 }
 
@@ -301,6 +326,11 @@ export function syncCounts(preview: PreviewData): SyncCounts {
     else if (song.action.startsWith("push")) send += 1;
     else if (song.action.startsWith("pull") && !freshPaths.has(song.book_path)) receive += 1;
   }
+  for (const group of preview.groups) {
+    if (group.action === "conflict") conflicts += 1;
+    else if (group.action.startsWith("push")) send += 1;
+    else if (group.action.startsWith("pull")) receive += 1;
+  }
   let freshPlans = 0;
   for (const plan of preview.plans) {
     if (plan.absent) freshPlans += 1;
@@ -315,7 +345,7 @@ export function syncCounts(preview: PreviewData): SyncCounts {
     freshBooks: books.filter((book) => book.absent).length,
     freshPlans,
     conflicts,
-    skipped: preview.grouped.length + preview.skipped.length,
+    skipped: preview.skipped.length,
     unchanged,
   };
 }
@@ -384,7 +414,14 @@ export function bannerText(preview: PreviewData, chosen: Record<string, Choice>)
     if (plan.action.startsWith("pull")) lines.push(`План «${plan.name}» изменён на сервере — в VisioBible попадёт после синхронизации.`);
     else if (plan.action.startsWith("push")) local.push(`План «${plan.name}» изменён в VisioBible — на сервер уйдёт при синхронизации.`);
   }
+  for (const group of openGroupConflicts(preview, chosen)) {
+    lines.push(`Группу «${group.local_name}» в сборнике «${group.book_title}» переименовали и в VisioBible, и на сервере — выберите название.`);
+  }
   return (lines.length ? lines : local).join(" ");
+}
+
+function openGroupConflicts(preview: PreviewData, chosen: Record<string, Choice>): PreviewGroup[] {
+  return preview.groups.filter((group) => group.action === "conflict" && !choiceReady(chosen[groupKey(group.book_path, group.section_id)]));
 }
 
 export function startHint(pending: string[], conflictsLeft: number): string {
@@ -466,19 +503,19 @@ function listedBooks(preview: PreviewData, chosen: Record<string, Choice>, adopt
       conflictId: unresolved[0]?.fbid ?? "",
     });
   }
-  for (const grouped of preview.grouped) {
+  for (const group of openGroupConflicts(preview, chosen)) {
     rows.push({
-      key: `grouped:${grouped.title}`,
-      title: grouped.title,
-      meta: grouped.note,
-      status: "Пропущен",
-      tone: "skip",
-      rowClass: "skip",
+      key: groupKey(group.book_path, group.section_id),
+      title: group.book_title || "Сборник",
+      meta: `Группу переименовали: в VisioBible «${group.local_name}», на сервере «${group.remote_name}»`,
+      status: "Нужно выбрать",
+      tone: "conflict",
+      rowClass: "conflict",
       aside: "",
-      mode: "plain",
-      serverId: "",
-      kind: "songbook",
-      conflictId: "",
+      mode: "name",
+      serverId: group.section_id,
+      kind: "group",
+      conflictId: group.book_path,
     });
   }
   return rows;
@@ -555,7 +592,7 @@ export function syncReady(
 ): boolean {
   if (!preview) return false;
   const visible = withoutRememberedSkips(preview, skips);
-  return canStart(conflictRows(visible.songs, visible.plans), chosen, pendingAdoption(visible, adopted));
+  return canStart(conflictRows(visible.songs, visible.plans, visible.groups), chosen, pendingAdoption(visible, adopted));
 }
 
 export interface SyncScreen {
@@ -576,9 +613,9 @@ export function syncScreen(
   skips: SkipLists = { songbooks: [], plans: [] },
 ): SyncScreen {
   const visible = withoutRememberedSkips(preview, skips);
-  const counts = syncCounts({ ...visible, skipped: preview.skipped, grouped: preview.grouped });
+  const counts = syncCounts({ ...visible, skipped: preview.skipped });
   const pending = pendingAdoption(visible, adopted);
-  const conflictsLeft = conflictRows(visible.songs, visible.plans).filter((row) => !choiceReady(chosen[row.key])).length;
+  const conflictsLeft = conflictRows(visible.songs, visible.plans, visible.groups).filter((row) => !choiceReady(chosen[row.key])).length;
   const banner = bannerText(visible, chosen);
   const chips: SyncChip[] = [
     { id: "send", text: `${counts.send} отправить`, tone: counts.send ? "plain" : "zero" },

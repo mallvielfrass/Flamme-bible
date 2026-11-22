@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { PlanDecision, SongDecision } from "./syncState";
+import type { GroupDecision, PlanDecision, PreviewGroup, SongDecision } from "./syncState";
 
 export interface Settings {
   server_url: string;
@@ -69,7 +69,7 @@ export interface Preview {
   songs: SongRow[];
   plans: PlanRow[];
   warnings: string[];
-  grouped: { title: string; note: string }[];
+  groups: PreviewGroup[];
   skipped: { kind: string; id: string; title: string }[];
 }
 
@@ -123,8 +123,8 @@ export const api = {
   selectDimension: (dimension_id: string) => invoke<Settings>("select_dimension", { dimension_id }),
   openVisio: (path: string) => invoke<Scan>("open_visio", { path }),
   preview: () => invoke<Preview>("preview_sync"),
-  start: (songs: SongDecision[], plans: PlanDecision[]) =>
-    invoke<{ notes: string[]; backups: string[] }>("start_sync", { request: { songs, plans } }),
+  start: (songs: SongDecision[], plans: PlanDecision[], groups: GroupDecision[]) =>
+    invoke<{ notes: string[]; backups: string[] }>("start_sync", { request: { songs, plans, groups } }),
   setSkipped: (kind: "songbook" | "plan", id: string, skip: boolean) =>
     invoke<void>("set_skipped", { kind, id, skip }),
   createPlan: (name: string, items: PlanItem[]) => invoke<Scan["plans"][number]>("create_plan", { name, items }),
