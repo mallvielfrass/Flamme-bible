@@ -3,6 +3,10 @@
 # через deploy/release.sh. Токен не нужен.
 set -eu
 
+# Весь сценарий читается целиком до запуска: сборка идёт около часа, и если
+# за это время таймер деплоя обновит файл, sh дочитал бы уже другой текст.
+{
+
 image_name=${CLIENT_BUILD_IMAGE:-flammebible-client-build}
 cache_volume=${CLIENT_BUILD_CACHE:-flammebible-client-cache}
 
@@ -141,6 +145,7 @@ echo "собираю образ $image_name"
 DOCKER_BUILDKIT=1 docker build -t "$image_name" "$root/deploy/client-build"
 
 outdir=$(mktemp -d)
+# shellcheck disable=SC2317 # вызывается из trap
 cleanup() {
 	rm -rf "$outdir"
 }
@@ -216,3 +221,5 @@ if [ "$publish" -eq 1 ]; then
 fi
 echo "публикую через deploy/release.sh"
 "$release" "$@"
+exit
+}
