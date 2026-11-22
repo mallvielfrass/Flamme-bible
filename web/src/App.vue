@@ -48,7 +48,6 @@ async function logout() {
         <span v-if="pendingAdmin" class="nav-badge">{{ pendingAdmin }}</span>
       </router-link>
       <div class="nav-end">
-        <button v-if="session.token" class="btn slim" type="button" @click="aiOpen = true">Настройки ИИ</button>
         <button v-if="session.token" class="logout" type="button" @click="logout">Выход</button>
         <template v-else>
           <router-link class="btn slim" to="/login">Войти</router-link>

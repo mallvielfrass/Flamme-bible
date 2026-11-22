@@ -121,11 +121,7 @@ async function onModel(id) {
   }
 }
 
-function onOpenSettings(kind) {
-  if (kind === 'drawer') {
-    drawer.value = true
-    return
-  }
+function onOpenSettings() {
   emit('open-settings')
 }
 </script>
@@ -161,6 +157,7 @@ function onOpenSettings(kind) {
         @regenerate="regenerate"
         @model="onModel"
         @open-settings="onOpenSettings"
+        @drawer="drawer = true"
       />
     </section>
     <ConfirmDialog ref="confirmRef" />
