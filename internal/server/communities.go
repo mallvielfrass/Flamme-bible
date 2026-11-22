@@ -24,7 +24,8 @@ func (s *Server) listCommunities(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) writeDimensions(w http.ResponseWriter, r *http.Request, userID, kind string) {
 	q := `
-		SELECT d.id::text, d.kind, d.name, d.address, d.email, d.confession, d.description
+		SELECT d.id::text, d.kind, d.name, d.address, d.email, d.confession, d.description, m.role,
+		       (SELECT count(*) FROM memberships x WHERE x.dimension_id = d.id AND NOT x.excluded)
 		FROM dimensions d
 		JOIN memberships m ON m.dimension_id = d.id
 		WHERE m.user_id = $1 AND NOT m.excluded`
@@ -43,7 +44,7 @@ func (s *Server) writeDimensions(w http.ResponseWriter, r *http.Request, userID,
 	list := []dimensionView{}
 	for rows.Next() {
 		var view dimensionView
-		if err := rows.Scan(&view.ID, &view.Kind, &view.Name, &view.Address, &view.Email, &view.Confession, &view.Description); err != nil {
+		if err := rows.Scan(&view.ID, &view.Kind, &view.Name, &view.Address, &view.Email, &view.Confession, &view.Description, &view.Role, &view.MemberCount); err != nil {
 			writeMapped(w, err)
 			return
 		}
