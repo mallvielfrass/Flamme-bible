@@ -72,6 +72,59 @@ var aiTools = []provider.Tool{
 	}`),
 }
 
+// aiWriteTools — изменения планов (SPEC 4.2). Выполняются сразу через savePlan /
+// insertPlan с их проверками доступа. Удаления плана целиком здесь нет.
+var aiWriteTools = []provider.Tool{
+	aiTool("create_plan", "Создать новый план служения. Без dimension_id план личный.", `{
+		"type": "object",
+		"properties": {
+			"title": {"type": "string", "description": "Название плана, например «Воскресенье 29.11»"},
+			"dimension_id": {"type": "string", "description": "uuid общины, если план общий; иначе не указывать"}
+		},
+		"required": ["title"]
+	}`),
+	aiTool("add_to_plan", "Добавить в план один пункт: песню (song_ref), место Писания (passage_ref) или текстовый слайд (text).", `{
+		"type": "object",
+		"properties": {
+			"plan_id": {"type": "string", "description": "uuid плана из list_plans"},
+			"song_ref": {"type": "string", "description": "song_ref песни из search_songs"},
+			"passage_ref": {"type": "string", "description": "passage_ref места из search_bible"},
+			"text": {"type": "string", "description": "Текст слайда (объявление, молитва)"},
+			"caption": {"type": "string", "description": "Заголовок текстового слайда"},
+			"position": {"type": "integer", "description": "Номер, под которым встанет пункт (1 — в начало). Не указывать — в конец"}
+		},
+		"required": ["plan_id"]
+	}`),
+	aiTool("remove_from_plan", "Убрать пункты из плана по их номерам n из get_plan (не больше 3 за раз).", `{
+		"type": "object",
+		"properties": {
+			"plan_id": {"type": "string", "description": "uuid плана"},
+			"items": {"type": "array", "items": {"type": "integer"}, "description": "Номера пунктов, например [2]"}
+		},
+		"required": ["plan_id", "items"]
+	}`),
+	aiTool("move_plan_item", "Переставить пункт плана на другое место.", `{
+		"type": "object",
+		"properties": {
+			"plan_id": {"type": "string", "description": "uuid плана"},
+			"from": {"type": "integer", "description": "Текущий номер пункта n"},
+			"to": {"type": "integer", "description": "Новый номер пункта"}
+		},
+		"required": ["plan_id", "from", "to"]
+	}`),
+	aiTool("rename_plan", "Переименовать план.", `{
+		"type": "object",
+		"properties": {
+			"plan_id": {"type": "string", "description": "uuid плана"},
+			"title": {"type": "string", "description": "Новое название"}
+		},
+		"required": ["plan_id", "title"]
+	}`),
+}
+
+// chatToolList — всё, что получает модель с отметкой «tools».
+var chatToolList = append(append([]provider.Tool{}, aiTools...), aiWriteTools...)
+
 func aiTool(name, description, schema string) provider.Tool {
 	return provider.Tool{
 		Type: "function",
@@ -119,8 +172,11 @@ func (s *Server) runAITool(ctx context.Context, userID string, call provider.Too
 		return aiToolOutcome{Content: `{"error":"ответ инструмента"}`, Summary: "ошибка"}
 	}
 	out := aiToolOutcome{Content: clipRunes(string(raw), aiToolResultRunes), Summary: summary, OK: true}
-	if name := call.Function.Name; name == "list_songbooks" {
+	switch call.Function.Name {
+	case "list_songbooks":
 		out.Cards = songbookCards(result)
+	case "create_plan", "add_to_plan", "remove_from_plan", "move_plan_item", "rename_plan":
+		out.Cards = planCards(result)
 	}
 	return out
 }
@@ -131,6 +187,12 @@ func aiToolError(err error) string {
 		return "не найдено"
 	case errors.Is(err, errRequest):
 		return "неверные аргументы"
+	case errors.Is(err, errAIRemoveLimit):
+		return "за раз можно убрать не больше 3 пунктов; больше пусть пользователь уберёт сам"
+	case errors.Is(err, errForbidden):
+		return "нет доступа"
+	case errors.Is(err, errConflict):
+		return "план только что изменили, перечитай его через get_plan"
 	case errors.Is(err, errSemanticOff):
 		return "смысловой поиск недоступен"
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
@@ -154,6 +216,16 @@ func (s *Server) callAITool(ctx context.Context, userID, name string, args []byt
 		return s.aiListPlans(ctx, userID, args)
 	case "get_plan":
 		return s.aiGetPlan(ctx, userID, args)
+	case "create_plan":
+		return s.aiCreatePlan(ctx, userID, args)
+	case "add_to_plan":
+		return s.aiAddToPlan(ctx, userID, args)
+	case "remove_from_plan":
+		return s.aiRemoveFromPlan(ctx, userID, args)
+	case "move_plan_item":
+		return s.aiMovePlanItem(ctx, userID, args)
+	case "rename_plan":
+		return s.aiRenamePlan(ctx, userID, args)
 	default:
 		return nil, "", errors.New("нет такого инструмента")
 	}
@@ -179,6 +251,16 @@ func aiToolLabel(call provider.ToolCall) string {
 		return "Смотрю планы"
 	case "get_plan":
 		return "Читаю план"
+	case "create_plan":
+		return "Создаю план"
+	case "add_to_plan":
+		return "Добавляю в план"
+	case "remove_from_plan":
+		return "Убираю из плана"
+	case "move_plan_item":
+		return "Переставляю в плане"
+	case "rename_plan":
+		return "Переименовываю план"
 	default:
 		return call.Function.Name
 	}
@@ -383,13 +465,14 @@ func (s *Server) aiSearchBible(ctx context.Context, raw []byte) (any, string, er
 		return nil, "", err
 	}
 	type passageOut struct {
-		Reference string `json:"reference"`
-		Module    string `json:"module"`
-		Text      string `json:"text"`
+		PassageRef string `json:"passage_ref"`
+		Reference  string `json:"reference"`
+		Module     string `json:"module"`
+		Text       string `json:"text"`
 	}
 	out := make([]passageOut, 0, len(hits))
 	for _, hit := range hits {
-		out = append(out, passageOut{Reference: hit.Reference, Module: hit.ModuleShortName, Text: hit.Text})
+		out = append(out, passageOut{PassageRef: passageRef(hit), Reference: hit.Reference, Module: hit.ModuleShortName, Text: hit.Text})
 	}
 	return map[string]any{"passages": out}, countSummary(len(out)), nil
 }
@@ -447,18 +530,7 @@ func (s *Server) aiGetPlan(ctx context.Context, userID string, raw []byte) (any,
 	if err != nil {
 		return nil, "", err
 	}
-	type itemOut struct {
-		N         int    `json:"n"`
-		Kind      string `json:"kind"`
-		Title     string `json:"title,omitempty"`
-		Reference string `json:"reference,omitempty"`
-		Caption   string `json:"caption,omitempty"`
-	}
-	items := make([]itemOut, 0, len(plan.Items))
-	for i, item := range plan.Items {
-		items = append(items, itemOut{N: i + 1, Kind: item.Kind, Title: item.Title, Reference: item.Reference, Caption: item.Caption})
-	}
-	return map[string]any{"id": plan.ID, "title": plan.Title, "version": plan.Version, "items": items}, plan.Title, nil
+	return aiPlanSummary(plan), plan.Title, nil
 }
 
 func optionalUUID(raw string) (any, error) {
