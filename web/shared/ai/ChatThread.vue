@@ -6,6 +6,7 @@ import camera from '../../src/assets/twemoji/1f4f7.svg'
 import pray from '../../src/assets/twemoji/1f64f.svg'
 import done from '../../src/assets/twemoji/2705.svg'
 import { copyText } from './clipboard.js'
+import { MAX_IMAGES, imageFiles, prepareImage } from './images.js'
 import AiIcon from './AiIcon.vue'
 import MessageView from './MessageView.vue'
 import SongbookChips from './SongbookChips.vue'
@@ -15,6 +16,7 @@ const props = defineProps({
   messages: { type: Array, default: () => [] },
   providers: { type: Array, default: () => [] },
   modelId: { type: String, default: '' },
+  visionModelId: { type: String, default: '' },
   streaming: { type: Boolean, default: false },
   hasProvider: { type: Boolean, default: false },
   chatOff: { type: Boolean, default: false },
@@ -29,12 +31,16 @@ const editing = ref(0)
 const editText = ref('')
 const menu = ref(false)
 const box = ref(null)
+const fileInput = ref(null)
+const attached = ref(/** @type {{ url: string, name: string }[]} */ ([]))
+const preparing = ref(false)
+const attachNote = ref('')
 
 const ideas = [
   { icon: music, title: 'Подбери песни о благодати', note: 'по смыслу, из моих сборников' },
   { icon: book, title: 'Найди места о прощении', note: 'синодальный перевод' },
   { icon: done, title: 'Собери план на воскресенье', note: '3 песни и чтение' },
-  { icon: camera, title: 'Распознай песню с фото', note: 'черновик в личный сборник' },
+  { icon: camera, title: 'Найди песни с фото', note: 'лист с текстом, список или скриншот', photo: true },
 ]
 
 const lastUser = computed(() => {
@@ -59,6 +65,75 @@ const picked = computed(() => {
 })
 
 const blocked = computed(() => props.chatOff || !props.hasProvider)
+
+// Фото читает сама модель чата с отметкой «фото» или модель задачи «Фото» из настроек.
+const canImages = computed(() => {
+  if (picked.value?.model.can_vision) return true
+  if (!props.visionModelId) return false
+  return props.providers.some((provider) => (provider.models || []).some((model) => model.id === props.visionModelId))
+})
+
+const noVision = 'Выбранная модель не читает изображения. В «Настройках ИИ» отметьте у неё «фото» или выберите модель для задачи «Фото».'
+
+function pickPhotos() {
+  attachNote.value = ''
+  if (blocked.value || props.streaming) return
+  if (!canImages.value) {
+    attachNote.value = noVision
+    return
+  }
+  if (attached.value.length >= MAX_IMAGES) {
+    attachNote.value = `Не больше ${MAX_IMAGES} изображений за раз.`
+    return
+  }
+  fileInput.value?.click()
+}
+
+async function addFiles(files) {
+  attachNote.value = ''
+  const all = Array.from(files || []).filter((file) => String(file?.type).startsWith('image/'))
+  if (!all.length || blocked.value || props.streaming) return
+  if (!canImages.value) {
+    attachNote.value = noVision
+    return
+  }
+  const fresh = imageFiles(all, attached.value.length)
+  if (fresh.length < all.length) attachNote.value = `Не больше ${MAX_IMAGES} изображений за раз.`
+  preparing.value = true
+  try {
+    for (const file of fresh) {
+      try {
+        attached.value = [...attached.value, await prepareImage(file)]
+      } catch (err) {
+        attachNote.value = err.message
+      }
+    }
+  } finally {
+    preparing.value = false
+  }
+}
+
+function onPicked(event) {
+  addFiles(event.target.files)
+  event.target.value = ''
+}
+
+function onPaste(event) {
+  const files = event.clipboardData?.files
+  if (files && Array.from(files).some((file) => String(file.type).startsWith('image/'))) {
+    event.preventDefault()
+    addFiles(files)
+  }
+}
+
+function onDrop(event) {
+  addFiles(event.dataTransfer?.files)
+}
+
+function unattach(index) {
+  attached.value = attached.value.filter((_, i) => i !== index)
+  attachNote.value = ''
+}
 
 const placeholder = computed(() => {
   if (!props.hasProvider) return 'Сначала подключите провайдера ИИ'
@@ -85,10 +160,20 @@ watch(() => [props.messages, props.streaming], async () => {
 
 function submit(text) {
   const value = (text ?? draft.value).trim()
-  if (!value || blocked.value || props.streaming) return
+  const images = text === undefined ? attached.value.map((item) => item.url) : []
+  if ((!value && !images.length) || blocked.value || props.streaming || preparing.value) return
   draft.value = ''
   menu.value = false
-  emit('send', value)
+  if (images.length) {
+    attached.value = []
+    attachNote.value = ''
+  }
+  emit('send', value, images)
+}
+
+function onIdea(idea) {
+  if (idea.photo) pickPhotos()
+  else submit(idea.title)
 }
 
 function onKey(event) {
@@ -163,7 +248,7 @@ function tokenLine(msg) {
       <h2>Чем помочь в подготовке служения? <img class="twemoji" :src="pray" alt="" /></h2>
       <p class="hint ai-empty-note">ИИ ищет в ваших сборниках и Библии, собирает планы и разбирает песни. Удаление — только с вашим подтверждением.</p>
       <div class="ai-chips">
-        <button v-for="idea in ideas" :key="idea.title" class="ai-chip" type="button" :disabled="streaming || chatOff" @click="submit(idea.title)">
+        <button v-for="idea in ideas" :key="idea.title" class="ai-chip" type="button" :disabled="streaming || chatOff" @click="onIdea(idea)">
           <img class="twemoji" :src="idea.icon" alt="" />
           <span><b>{{ idea.title }}</b><span>{{ idea.note }}</span></span>
         </button>
@@ -175,7 +260,17 @@ function tokenLine(msg) {
       <article v-for="msg in messages" :key="msg.id || msg.seq" :class="msg.role === 'user' ? 'ai-user' : 'ai-ai'">
         <template v-if="msg.role === 'user'">
           <textarea v-if="editing === msg.seq" v-model="editText" rows="3" @keydown.enter.exact.prevent="saveEdit" />
-          <div v-else class="ai-user-text">{{ msg.content }}</div>
+          <template v-else>
+            <div v-if="msg.images?.previews?.length" class="ai-shots">
+              <img v-for="(url, i) in msg.images.previews" :key="i" :src="url" alt="Приложенное изображение" />
+            </div>
+            <div v-else-if="msg.images?.count" class="ai-shot-count">Изображений: {{ msg.images.count }}</div>
+            <div v-if="msg.content" class="ai-user-text">{{ msg.content }}</div>
+            <details v-if="msg.images?.text" class="ai-shot-text">
+              <summary>Текст с изображений</summary>
+              <pre>{{ msg.images.text }}</pre>
+            </details>
+          </template>
           <div class="ai-user-acts">
             <button v-if="editing === msg.seq" class="ai-ib" type="button" aria-label="Сохранить" @click="saveEdit">
               <AiIcon name="check" />
@@ -218,11 +313,27 @@ function tokenLine(msg) {
     </div>
   </div>
 
-  <form class="ai-composer" @submit.prevent="submit()">
+  <form class="ai-composer" @submit.prevent="submit()" @dragover.prevent @drop.prevent="onDrop">
     <div class="ai-cbox">
-      <textarea v-model="draft" rows="1" :disabled="blocked || streaming" :placeholder="placeholder" @keydown="onKey" />
+      <div v-if="attached.length || preparing" class="ai-attach">
+        <div v-for="(item, index) in attached" :key="index" class="ai-thumb">
+          <img :src="item.url" :alt="item.name" />
+          <button type="button" class="ai-thumb-x" :aria-label="`Убрать ${item.name}`" @click="unattach(index)">×</button>
+        </div>
+        <span v-if="preparing" class="ai-attach-wait">Готовлю фото…</span>
+      </div>
+      <textarea v-model="draft" rows="1" :disabled="blocked || streaming" :placeholder="placeholder" @keydown="onKey" @paste="onPaste" />
       <div class="ai-cbar">
-        <button class="ai-ib ai-clip" type="button" disabled title="Фото — скоро" aria-label="Фото — скоро">
+        <input ref="fileInput" class="ai-file" type="file" accept="image/jpeg,image/png,image/webp,image/*" multiple @change="onPicked" />
+        <button
+          class="ai-ib ai-clip"
+          type="button"
+          :disabled="blocked || streaming"
+          :class="{ off: !canImages }"
+          :title="canImages ? `Приложить фото (до ${MAX_IMAGES})` : 'Модель не читает фото'"
+          :aria-label="canImages ? 'Приложить фото' : 'Модель не читает фото'"
+          @click="pickPhotos"
+        >
           <AiIcon name="clip" />
         </button>
         <div class="ai-mp">
@@ -246,6 +357,7 @@ function tokenLine(msg) {
                 <AiIcon v-if="model.id === modelId" name="check" />
                 <span>{{ model.display_name || model.model }}</span>
                 <span v-if="!model.can_tools" class="ai-badge">без tools</span>
+                <span v-if="model.can_vision" class="ai-badge">фото</span>
                 <span class="id">{{ model.model }}</span>
               </button>
             </template>
@@ -258,11 +370,13 @@ function tokenLine(msg) {
         <button v-if="streaming" class="ai-send stop" type="button" aria-label="Остановить" @click="emit('stop')">
           <span class="sq"></span>
         </button>
-        <button v-else class="ai-send" type="submit" aria-label="Отправить" :disabled="blocked">
+        <button v-else class="ai-send" type="submit" aria-label="Отправить" :disabled="blocked || preparing">
           <AiIcon name="up" />
         </button>
       </div>
     </div>
-    <div class="ai-under"><span>Enter — отправить, Shift+Enter — новая строка</span></div>
+    <p v-if="attachNote" class="ai-attach-note" role="status">{{ attachNote }}</p>
+    <p v-else-if="attached.length && !canImages" class="ai-attach-note" role="status">{{ noVision }}</p>
+    <div class="ai-under"><span>Enter — отправить, Shift+Enter — новая строка. Фото можно вставить или перетащить</span></div>
   </form>
 </template>
