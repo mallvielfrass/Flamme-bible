@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import ConfirmDialog from "../../../web/shared/components/ConfirmDialog.vue";
+import ItemTextModal from "../../../web/shared/components/ItemTextModal.vue";
+import { planItemText } from "../../../web/src/planItems.js";
 import SpaceFilter from "../../../web/shared/components/SpaceFilter.vue";
 import { plansApi, explain, type ImportedPlan, type PlansApi } from "./api";
 import DownloadModal from "./DownloadModal.vue";
@@ -34,6 +36,11 @@ import "./plans.css";
 
 const props = defineProps<{ loggedIn: boolean; client?: PlansApi }>();
 const client = computed(() => props.client ?? plansApi);
+const viewing = ref<PlanItem | null>(null);
+
+function viewText(item: PlanItem) {
+  return planItemText(item, { song: client.value.songText, verse: client.value.verseText });
+}
 
 const plans = ref<Plan[]>([]);
 const communities = ref<Community[]>([]);
@@ -543,6 +550,7 @@ onBeforeUnmount(() => {
           @remove="remove(plan)"
           @add="openAdd"
           @edit="openEdit"
+          @view="(index) => (viewing = editor?.items[index] ?? null)"
           @move="(index, delta) => editor && changeItems(moveItem(editor.items, index, delta))"
           @remove-item="removeItem"
         />
@@ -582,6 +590,7 @@ onBeforeUnmount(() => {
       @close="downloadId = ''"
       @download="onDownload"
     />
+    <ItemTextModal v-if="viewing" :title="viewing.title || viewing.caption || 'Пункт'" :load="() => viewText(viewing!)" @close="viewing = null" />
     <ConfirmDialog ref="confirmRef" />
   </section>
 </template>

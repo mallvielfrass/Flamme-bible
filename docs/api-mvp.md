@@ -147,6 +147,10 @@ songbook_section_songs (section_id, songbook_id, fbid, position)
 
 Нужна сессия. Видны только одобренные модули. `module` — id модуля или короткое имя, например `RST`. Ответ: `{"passages":[{"module_id","module_short_name","module_title","book","book_name","chapter","verse_start","verse_end","reference","text"}]}`. `book` — номер книги в порядке `PathName` модуля. `reference` вроде `Истории 2:1-2`.
 
+`GET /api/songs/text?songbook_id=&fbid=` — сессия. Полный текст песни для просмотра пункта плана: `title`, `songbook_title`, `section_title`, `text` (части через пустую строку). Доступ как у поиска; иначе `404`.
+
+`GET /api/bible/verse?module=&book=&chapter=&verse=` — сессия. Один стих одобренного перевода по короткому имени: `module_short_name`, `module_title`, `book_name`, `chapter`, `verse`, `text`. Нет стиха — `404`.
+
 ## Модерация
 
 У сборника и модуля Библии есть `status`: `draft`, `pending`, `approved`, `rejected`, а также `moderation_note`, `reviewed_by`, `reviewed_at`.

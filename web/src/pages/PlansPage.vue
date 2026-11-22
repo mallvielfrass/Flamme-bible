@@ -10,6 +10,7 @@ import {
   itemTitle,
   maxPlanItems,
   moveItem,
+  planItemText,
   pointsLabel,
 } from '../planItems'
 import { useSessionStore } from '../stores/session'
@@ -18,6 +19,7 @@ import PlanCard from '../components/PlanCard.vue'
 import PlanDownloadModal from '../components/PlanDownloadModal.vue'
 import PlanFileModal from '../components/PlanFileModal.vue'
 import PlanItemModal from '../components/PlanItemModal.vue'
+import ItemTextModal from '../../shared/components/ItemTextModal.vue'
 import SpaceFilter from '../../shared/components/SpaceFilter.vue'
 
 const session = useSessionStore()
@@ -29,6 +31,14 @@ const busy = ref(false)
 const error = ref('')
 const notice = ref('')
 const editor = ref(null)
+const viewing = ref(null)
+
+function viewText(item) {
+  return planItemText(item, {
+    song: (songbookId, fbid) => api(`/api/songs/text?songbook_id=${encodeURIComponent(songbookId)}&fbid=${encodeURIComponent(fbid)}`, { token: session.token }),
+    verse: (module, book, chapter, verse) => api(`/api/bible/verse?module=${encodeURIComponent(module)}&book=${book}&chapter=${chapter}&verse=${verse}`, { token: session.token }),
+  })
+}
 const savedSnap = ref('')
 const openId = ref('')
 const repair = ref(null)
@@ -578,6 +588,7 @@ onBeforeUnmount(() => {
       @destination="editor.dimension_id = $event"
       @add="itemIndex = -1; itemOpen = true"
       @edit="itemIndex = $event; itemOpen = true"
+      @view="viewing = editor.items[$event]"
       @move="(index, delta) => { editor.items = moveItem(editor.items, index, delta) }"
       @remove-item="removeItem"
     />
@@ -607,6 +618,7 @@ onBeforeUnmount(() => {
       @title="editor.title = $event"
       @add="itemIndex = -1; itemOpen = true"
       @edit="itemIndex = $event; itemOpen = true"
+      @view="viewing = editor.items[$event]"
       @move="(index, delta) => { editor.items = moveItem(editor.items, index, delta) }"
       @remove-item="removeItem"
       @repair="applyRepair"
@@ -639,5 +651,6 @@ onBeforeUnmount(() => {
     @close="downloadOpen = false"
     @download="onDownload"
   />
+  <ItemTextModal v-if="viewing" :title="viewing.title || viewing.caption || 'Пункт'" :load="() => viewText(viewing)" @close="viewing = null" />
   <ConfirmDialog ref="confirmRef" />
 </template>

@@ -10,6 +10,7 @@ import {
   itemStamp,
   moveItem,
   planItemFromResult,
+  planItemText,
   planTarget,
   planUpdatedLabel,
   songItem,
@@ -145,5 +146,24 @@ describe('plan items from chat results', () => {
 
     const full = planTarget({ read: async () => ({ id: 'p1', items: [song] }), save: async () => {} })
     await expect(full.add('p1', { kind: 'song', id: 'dim/book-1/fb-1', title: 'Песня' })).rejects.toThrow('уже есть')
+  })
+})
+
+describe('plan item text for the eye button', () => {
+  const io = {
+    song: async (book, fbid) => ({ title: 'Благодать', songbook_title: 'Сборник', section_title: 'Хор', text: `${book}/${fbid}` }),
+    verse: async () => ({ module_short_name: 'RST', module_title: 'Синодальный', text: 'Ибо так возлюбил' }),
+  }
+  it('shows a song with its songbook and section, a verse with its translation and reference', async () => {
+    expect(await planItemText({ kind: 'song', song_id: 'fb', songbook_id: 'b1', title: 'Б' }, io))
+      .toEqual({ title: 'Благодать', source: 'Сборник · Хор', text: 'b1/fb' })
+    expect(await planItemText({ kind: 'bible', module_short_name: 'RST', book: 43, chapter: 3, verse: 16, reference: 'Ин. 3:16' }, io))
+      .toEqual({ title: 'Ин. 3:16', source: 'RST — Синодальный · Ин. 3:16', text: 'Ибо так возлюбил' })
+  })
+  it('falls back to the saved quote when the server has no verse', async () => {
+    const missing = { ...io, verse: async () => { throw new Error('не найдено') } }
+    expect(await planItemText({ kind: 'bible', module_short_name: 'RST', book: 1, chapter: 1, verse: 1, reference: 'Быт. 1:1', quote: 'В начале' }, missing))
+      .toEqual({ title: 'Быт. 1:1', source: 'RST · Быт. 1:1', text: 'В начале' })
+    await expect(planItemText({ kind: 'bible', module_short_name: 'RST', book: 1, chapter: 1, verse: 1 }, missing)).rejects.toThrow('не найдено')
   })
 })

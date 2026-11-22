@@ -34,6 +34,19 @@ export interface ParsedPlan {
   };
 }
 
+export interface SongText {
+  title: string;
+  songbook_title: string;
+  section_title: string;
+  text: string;
+}
+
+export interface VerseText {
+  module_short_name: string;
+  module_title: string;
+  text: string;
+}
+
 export interface PlansApi {
   list(): Promise<Plan[]>;
   read(id: string): Promise<Plan>;
@@ -47,6 +60,8 @@ export interface PlansApi {
   songbooks(): Promise<SongbookGroup[]>;
   findSongs(query: string, songbookId: string, sectionId: string): Promise<SongHit[]>;
   communities(): Promise<Community[]>;
+  songText(songbookId: string, fbid: string): Promise<SongText>;
+  verseText(module: string, book: number, chapter: number, verse: number): Promise<VerseText>;
 }
 
 function extension(format: string): string {
@@ -99,6 +114,8 @@ export const plansApi: PlansApi = {
   },
   folder: () => invoke<LocalMark[]>("plans_folder"),
   songbooks: () => invoke<SongbookGroup[]>("plans_songbooks"),
+  songText: (songbookId, fbid) => invoke<SongText>("plans_song_text", { songbookId, fbid }),
+  verseText: (module, book, chapter, verse) => invoke<VerseText>("plans_verse_text", { module, book, chapter, verse }),
   findSongs: (query, songbookId, sectionId) =>
     invoke<SongHit[]>("plans_find_songs", { query, songbookId, sectionId }),
   async communities() {
