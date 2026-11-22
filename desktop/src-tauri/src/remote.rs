@@ -461,12 +461,12 @@ impl Remote {
         })
     }
 
-    async fn send<T: for<'de> Deserialize<'de>, B: Serialize>(
+    pub(crate) async fn exchange<B: Serialize>(
         &self,
         method: reqwest::Method,
         path: &str,
         body: Option<&B>,
-    ) -> RemoteResult<T> {
+    ) -> Result<Reply, String> {
         let url = format!("{}{path}", self.base);
         let mut request = self.http.request(method, &url);
         if !self.token.is_empty() {
@@ -478,18 +478,55 @@ impl Remote {
         let response = request
             .send()
             .await
-            .map_err(|err| RemoteError::Message(format!("Нет связи с сервером: {err}")))?;
-        let status = response.status();
-        let text = response
-            .text()
-            .await
-            .map_err(|err| RemoteError::Message(err.to_string()))?;
-        if !status.is_success() {
-            return Err(parse_failure(status.as_u16(), &text));
+            .map_err(|err| format!("Нет связи с сервером: {err}"))?;
+        let status = response.status().as_u16();
+        let text = response.text().await.map_err(|err| err.to_string())?;
+        Ok(Reply { status, text })
+    }
+
+    pub(crate) async fn get_bytes(&self, path: &str) -> Result<Vec<u8>, String> {
+        let url = format!("{}{path}", self.base);
+        let mut request = self.http.get(&url);
+        if !self.token.is_empty() {
+            request = request.bearer_auth(&self.token);
         }
-        serde_json::from_str(&text)
+        let response = request
+            .send()
+            .await
+            .map_err(|err| format!("Нет связи с сервером: {err}"))?;
+        let status = response.status();
+        if !status.is_success() {
+            let text = response.text().await.map_err(|err| err.to_string())?;
+            return Err(parse_failure(status.as_u16(), &text).to_string());
+        }
+        response
+            .bytes()
+            .await
+            .map(|bytes| bytes.to_vec())
+            .map_err(|err| err.to_string())
+    }
+
+    async fn send<T: for<'de> Deserialize<'de>, B: Serialize>(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&B>,
+    ) -> RemoteResult<T> {
+        let reply = self
+            .exchange(method, path, body)
+            .await
+            .map_err(RemoteError::Message)?;
+        if !(200..300).contains(&reply.status) {
+            return Err(parse_failure(reply.status, &reply.text));
+        }
+        serde_json::from_str(&reply.text)
             .map_err(|err| RemoteError::Message(format!("Ответ сервера не разобран: {err}")))
     }
+}
+
+pub(crate) struct Reply {
+    pub status: u16,
+    pub text: String,
 }
 
 #[derive(Clone, Debug)]
@@ -595,7 +632,7 @@ fn client(timeout: Duration) -> Result<reqwest::Client, String> {
     builder.build().map_err(|err| err.to_string())
 }
 
-fn urlencoding_min(value: &str) -> String {
+pub(crate) fn urlencoding_min(value: &str) -> String {
     let mut out = String::new();
     for byte in value.bytes() {
         match byte {
