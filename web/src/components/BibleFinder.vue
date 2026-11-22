@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { api, explain } from '../api'
-import { hitItem, hitRange } from '../bibleReader.js'
+import { hitResult, hitRange } from '../bibleReader.js'
 import AddToPlanModal from '../../shared/ai/AddToPlanModal.vue'
 
 // Поиск по Библии в основном переводе: по словам (/api/bible/search) или по смыслу
@@ -75,7 +75,7 @@ function open(hit) {
 
 function addToPlan(hit) {
   try {
-    adding.value = hitItem(props.translations, hit)
+    adding.value = hitResult(props.translations, hit)
   } catch (err) {
     error.value = err.message
   }

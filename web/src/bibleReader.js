@@ -1,7 +1,8 @@
 import { moduleNameOk } from './checks'
-import { bibleItem } from './planItems'
 
 // Логика страницы «Библия» без Vue: выбор переводов, выделение стихов, пункт плана.
+// «В план» получает результат в форме ответа чата ({ kind, title, body, … }),
+// как ожидает AddToPlanModal; в пункт плана его превращает planItemFromResult.
 
 export const translationsKey = 'flamme.bible.translations'
 export const maxTranslations = 4
@@ -83,20 +84,33 @@ export function rangeText(verses, range) {
     .join('\n')
 }
 
+function bibleResult({ first, second, book, chapter, verse, reference, text }) {
+  return {
+    kind: 'bible',
+    title: reference,
+    body: text,
+    module_short_name: first || '',
+    module_short_name_second: second || '',
+    book: Number(book) || 0,
+    chapter: Number(chapter) || 0,
+    verse: Number(verse) || 0,
+  }
+}
+
 /**
- * Пункт плана «Стих» из выделения. Основной перевод — первый выбранный,
+ * «Стих» для плана из выделения. Основной перевод — первый выбранный,
  * второй выбранный уходит в module_short_name_second (параллельный показ в VisioBible).
  */
-export function passageItem({ translations, book, bookName, chapter, range, verses }) {
+export function passageResult({ translations, book, bookName, chapter, range, verses }) {
   if (!range) throw new Error('Выделите стихи.')
-  return bibleItem({
-    module_short_name: translations[0] || '',
-    module_short_name_second: translations[1] || '',
+  return bibleResult({
+    first: translations[0],
+    second: translations[1],
     book,
     chapter,
     verse: range.start,
     reference: rangeLabel(bookName, chapter, range),
-    quote: rangeText(verses, range),
+    text: rangeText(verses, range),
   })
 }
 
@@ -108,18 +122,18 @@ export function hitRange(hit) {
   return { start, end: Math.max(start, end) }
 }
 
-/** Пункт плана прямо из результата поиска, с текстом из найденного перевода. */
-export function hitItem(translations, hit) {
+/** «Стих» для плана прямо из результата поиска, с текстом из найденного перевода. */
+export function hitResult(translations, hit) {
   const range = hitRange(hit)
   const own = hit?.module_short_name || ''
   const rest = translations.filter((name) => name !== own)
-  return bibleItem({
-    module_short_name: own || translations[0] || '',
-    module_short_name_second: own ? rest[0] || '' : translations[1] || '',
+  return bibleResult({
+    first: own || translations[0],
+    second: own ? rest[0] : translations[1],
     book: hit?.book,
     chapter: hit?.chapter,
-    verse: range?.start || 0,
+    verse: range?.start,
     reference: hit?.reference || rangeLabel(hit?.book_name, hit?.chapter, range),
-    quote: hit?.text || '',
+    text: hit?.text || '',
   })
 }

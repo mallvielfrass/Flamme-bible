@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { api, explain } from '../api'
-import { inRange, passageItem, rangeLabel, selectVerse } from '../bibleReader.js'
+import { inRange, passageResult, rangeLabel, selectVerse } from '../bibleReader.js'
 import AddToPlanModal from '../../shared/ai/AddToPlanModal.vue'
 
 // Чтение главы: книга и глава по основному переводу, стихи всех выбранных переводов рядом.
@@ -104,7 +104,7 @@ function open(place) {
 
 function addToPlan() {
   try {
-    adding.value = passageItem({
+    adding.value = passageResult({
       translations: props.translations,
       book: book.value,
       bookName: bookName.value,
