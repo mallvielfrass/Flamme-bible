@@ -54,7 +54,9 @@ function authHeaders(token, extra) {
 export async function api(path, { method = 'GET', body, token } = {}) {
   const headers = authHeaders(token)
   let payload
-  if (body !== undefined) {
+  if (body instanceof Blob) {
+    payload = body
+  } else if (body !== undefined) {
     headers['Content-Type'] = 'application/json'
     payload = JSON.stringify(body)
   }

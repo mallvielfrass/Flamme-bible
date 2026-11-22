@@ -58,6 +58,9 @@ func (s *Server) mountMVP(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/admin/embed", s.adminPutEmbedSettings)
 	mux.HandleFunc("POST /api/admin/embed/retry", s.adminRetryEmbed)
 	mux.HandleFunc("POST /api/admin/embed/reindex", s.adminReindexEmbed)
+	mux.HandleFunc("PUT /api/admin/embed/model", s.adminSetEmbedModel)
+	mux.HandleFunc("POST /api/admin/embed/model/reset", s.adminResetEmbedModel)
+	mux.HandleFunc("POST /api/admin/embed/gguf", s.adminUploadGGUF)
 	mux.HandleFunc("GET /api/admin/submissions", s.adminSubmissions)
 	mux.HandleFunc("GET /api/admin/summary", s.adminSummary)
 	mux.HandleFunc("GET /api/admin/audit", s.adminAudit)
@@ -96,6 +99,9 @@ func (s *Server) dispatch(next http.Handler) http.Handler {
 		limit := int64(maxBody)
 		if r.Method == http.MethodPost && r.URL.Path == "/api/admin/releases" {
 			limit = maxReleaseBody
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/admin/embed/gguf" {
+			limit = ggufMaxBytes()
 		}
 		http.MaxBytesHandler(next, limit).ServeHTTP(w, r)
 	})

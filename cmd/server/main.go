@@ -40,6 +40,11 @@ func main() {
 			log.Fatal(err)
 		}
 	}
+	if dir := os.Getenv("EMBED_MODELS_DIR"); dir != "" {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			log.Fatal(err)
+		}
+	}
 	api := server.New(pool)
 	if raw := os.Getenv("SESSION_TTL"); raw != "" {
 		ttl, err := time.ParseDuration(raw)

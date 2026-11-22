@@ -57,6 +57,8 @@ func auditText(action, kind, title, note string) string {
 		"invite_revoke": "отозвал", "publish_decision": "решил публикацию",
 		"embed_settings": "изменил скорость", "embed_retry": "повторил",
 		"embed_reindex": "запустил пересчёт", "embed_switch": "переключил индекс",
+		"embed_model": "выбрал модель", "embed_model_reset": "вернул модель",
+		"embed_gguf": "загрузил модель",
 	}[action]
 	if verb == "" {
 		verb = action

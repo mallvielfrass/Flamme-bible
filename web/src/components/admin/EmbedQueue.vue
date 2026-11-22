@@ -12,6 +12,8 @@ const rate = ref(32)
 const percent = ref(50)
 const batch = ref(4)
 const paused = ref(false)
+const desiredModel = ref('cointegrated/rubert-tiny2')
+const ggufName = ref('')
 
 function apply(data) {
   stats.value = data
@@ -21,6 +23,9 @@ function apply(data) {
   percent.value = Number(settings.embed_capacity_percent || 50)
   batch.value = Number(settings.embed_batch_size || 4)
   paused.value = !!settings.paused
+  const model = data.model || {}
+  if (model.desired_model) desiredModel.value = model.desired_model
+  ggufName.value = model.desired_file || ''
 }
 
 async function load() {
@@ -59,6 +64,71 @@ async function retry() {
   error.value = ''
   try {
     apply(await api('/api/admin/embed/retry', { method: 'POST', token: session.token }))
+  } catch (err) {
+    error.value = explain(err)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function saveModel() {
+  busy.value = true
+  error.value = ''
+  try {
+    apply(await api('/api/admin/embed/model', {
+      method: 'PUT',
+      token: session.token,
+      body: { source: 'tei', model_id: desiredModel.value.trim() },
+    }))
+  } catch (err) {
+    error.value = explain(err)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function resetModel() {
+  busy.value = true
+  error.value = ''
+  try {
+    apply(await api('/api/admin/embed/model/reset', { method: 'POST', token: session.token }))
+  } catch (err) {
+    error.value = explain(err)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function useGGUF() {
+  busy.value = true
+  error.value = ''
+  try {
+    apply(await api('/api/admin/embed/model', {
+      method: 'PUT',
+      token: session.token,
+      body: { source: 'llama', file: ggufName.value.trim() },
+    }))
+  } catch (err) {
+    error.value = explain(err)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function uploadGGUF(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  busy.value = true
+  error.value = ''
+  try {
+    const name = encodeURIComponent(file.name)
+    apply(await api(`/api/admin/embed/gguf?name=${name}`, {
+      method: 'POST',
+      token: session.token,
+      body: file,
+    }))
+    ggufName.value = file.name
   } catch (err) {
     error.value = explain(err)
   } finally {
@@ -105,7 +175,30 @@ onMounted(load)
       рабочая: {{ Math.round(stats.effective_tokens_per_sec || 0) }} ток/с ·
       оценка: {{ eta(stats.eta_seconds) }}
     </p>
-    <p v-if="stats?.live_model" class="hint">Модель: {{ stats.live_model }} · {{ stats.live_dim || '—' }} чисел</p>
+    <p v-if="stats?.model?.id || stats?.live_model" class="hint">
+      Сейчас: {{ stats.model?.source || 'tei' }} · {{ stats.model?.id || stats.live_model }} ·
+      {{ stats.model?.dimension || stats.live_dim || '—' }} чисел ·
+      окно {{ stats.model?.max_tokens || '—' }} ток. ·
+      файл {{ stats.model?.file_size ? Math.round(stats.model.file_size / 1048576) + ' МиБ' : '—' }} ·
+      замер {{ Math.round(stats.model?.measured_tokens_per_sec || stats.measured_tokens_per_sec || 0) }} ток/с
+    </p>
+    <form class="embed-form" @submit.prevent="saveModel">
+      <label>Модель Hugging Face
+        <input v-model="desiredModel" name="model_id" placeholder="org/name" />
+      </label>
+      <button class="btn slim" type="submit" :disabled="busy">Запомнить</button>
+      <button class="btn slim" type="button" :disabled="busy" @click="resetModel">rubert-tiny2</button>
+    </form>
+    <p v-if="stats?.model?.restart" class="hint">Сервер сам контейнер не перезапускает. На хосте: {{ stats.model.restart }}</p>
+    <form class="embed-form" @submit.prevent="useGGUF">
+      <label>Файл GGUF
+        <input v-model="ggufName" name="gguf" placeholder="model.gguf" />
+      </label>
+      <button class="btn slim" type="submit" :disabled="busy">Выбрать llama.cpp</button>
+      <label class="btn slim">Загрузить
+        <input type="file" accept=".gguf" hidden @change="uploadGGUF" />
+      </label>
+    </form>
     <form class="embed-form" @submit.prevent="save">
       <label>Режим
         <select v-model="mode">

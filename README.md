@@ -163,6 +163,10 @@ go run ./cmd/upload -server https://example.com -token "$FLAMMEBIBLE_TOKEN" -ver
 | `EMBED_BATCH_SIZE` | сервер | сколько текстов за один запрос к модели, 1–8, по умолчанию 4 |
 | `EMBED_INTERVAL` | сервер | пауза воркера, когда очередь пуста. По умолчанию `1s` |
 | `EMBED_CONCURRENCY` | сервер | число воркеров, 1 или 2. По умолчанию 1 |
+| `EMBED_MODELS_DIR` | сервер | каталог файлов GGUF. Пусто — загрузка выключена. В Docker это `/data/embed-models` |
+| `GGUF_MAX_BYTES` | сервер | предел размера одного GGUF. По умолчанию 64 МиБ, в compose 512 МиБ |
+| `LLAMA_GGUF` | профиль `llama` | имя файла в томе моделей. Контейнер llama.cpp сам не стартует, пока профиль не включён |
+| `LLAMA_MEMORY` | профиль `llama` | память контейнера llama.cpp. По умолчанию `1536m` |
 | `COMPOSE_PROFILES` | Docker Compose | `semantic` — поднять контейнер модели. Без этого он не стартует |
 | `EMBED_CPUS` | контейнер модели | сколько ядер ей отдать. По умолчанию `1` |
 | `EMBED_MEMORY` | контейнер модели | сколько памяти ей отдать. По умолчанию `768m` |

@@ -112,6 +112,9 @@ func (s *Server) ensureEmbedSettings(ctx context.Context) error {
 		{"embed_capacity_percent", strconv.Itoa(cur.CapacityPercent)},
 		{"embed_batch_size", strconv.Itoa(cur.BatchSize)},
 		{"embed_paused", "0"},
+		{"embed_desired_source", "tei"},
+		{"embed_desired_model", defaultEmbedModel},
+		{"embed_desired_file", ""},
 	}
 	for _, pair := range pairs {
 		if _, err := s.db.Exec(ctx, `
