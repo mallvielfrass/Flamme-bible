@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"net/http"
 	"testing"
 )
@@ -94,5 +95,30 @@ func TestSongbookSectionsAndSearch(t *testing.T) {
 	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/songs/search?q=Альфа&section_id="+section.ID, nil)
 	if code != http.StatusNotFound {
 		t.Fatalf("удалённый раздел %d %s", code, raw)
+	}
+}
+
+func TestSectionTitleIsUnique(t *testing.T) {
+	srv := newTestServer(t)
+	owner := registerUser(t, srv, "owner@example.com", "secret-pass", nil)
+	book := createBook(t, srv, owner.Token, owner.DimensionID, map[string]any{"fbid": "book", "title": "Домашний"})
+
+	code, raw := api(t, srv, owner.Token, http.MethodPost, "/api/songbooks/"+book.ID+"/sections", map[string]any{"title": "Служение"})
+	if code != http.StatusOK {
+		t.Fatalf("раздел %d %s", code, raw)
+	}
+	var first sectionView
+	mustJSON(t, raw, &first)
+	code, raw = api(t, srv, owner.Token, http.MethodPost, "/api/songbooks/"+book.ID+"/sections", map[string]any{"title": " Служение "})
+	if code != http.StatusConflict || !bytes.Contains(raw, []byte(`"раздел"`)) {
+		t.Fatalf("повтор названия %d %s", code, raw)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodPost, "/api/songbooks/"+book.ID+"/sections", map[string]any{"title": "Дети"})
+	if code != http.StatusOK {
+		t.Fatalf("второй %d %s", code, raw)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodPut, "/api/songbooks/"+book.ID+"/sections/"+first.ID, map[string]any{"title": "Дети"})
+	if code != http.StatusConflict || !bytes.Contains(raw, []byte(`"раздел"`)) {
+		t.Fatalf("переименование в занятое %d %s", code, raw)
 	}
 }
