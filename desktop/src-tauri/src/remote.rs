@@ -296,7 +296,7 @@ impl Remote {
         module: &crate::bible::BibleIdentity,
     ) -> Result<ModuleExists, String> {
         let files = crate::bible::read_upload(module)?;
-        let http = client(Duration::from_secs(180))?;
+        let http = http_client(Duration::from_secs(180))?;
         let mut form = reqwest::multipart::Form::new()
             .text("content_hash", module.content_hash.clone())
             .text("short_name", module.short_name.clone())

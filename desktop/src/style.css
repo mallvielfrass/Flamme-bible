@@ -460,6 +460,7 @@ pre {
   .topbar, .topbar nav { flex-wrap: wrap; }
   .nav-end { margin-left: 0; }
   .path-row { flex-direction: column; align-items: stretch; }
+}
 
 .shell.is-chat {
   height: 100vh;
@@ -478,9 +479,3 @@ pre {
 }
 
 .chat-pane .ai-page { height: 100%; }
-
-@media (max-width: 800px) {
-  .grid, .split, .topbar { grid-template-columns: 1fr; }
-  .topbar, .tabs { flex-direction: column; align-items: stretch; }
-  .tabs { margin-left: 0; }
-}
