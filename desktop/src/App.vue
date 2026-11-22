@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import AiChat from "./components/AiChat.vue";
 import ConflictModal from "./components/ConflictModal.vue";
 import PlansView from "./components/PlansView.vue";
 import SyncView from "./components/SyncView.vue";
@@ -9,7 +10,7 @@ import UpdatesView from "./components/UpdatesView.vue";
 import { api, type Dimension, type PlanItem, type Preview, type Progress, type Scan, type Settings, type SongHit, type SongRow, type UpdateView } from "./commands";
 import { canStart, conflictRows, decisionsFrom, planKey, songKey, type Choice } from "./syncState";
 
-const tab = ref<"sync" | "plans" | "updates">("sync");
+const tab = ref<"sync" | "plans" | "updates" | "ai">("sync");
 const settings = ref<Settings>({
   server_url: "http://localhost:8080",
   email: "",
@@ -214,13 +215,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="shell">
+  <div class="shell" :class="{ 'is-chat': tab === 'ai' }">
     <header class="topbar">
       <div class="brand">FlammeBible</div>
       <nav class="tabs">
         <button class="tab" :class="{ active: tab === 'sync' }" type="button" @click="tab = 'sync'">Синхронизация</button>
         <button class="tab" :class="{ active: tab === 'plans' }" type="button" @click="tab = 'plans'">Планы</button>
         <button class="tab" :class="{ active: tab === 'updates' }" type="button" @click="tab = 'updates'">Обновление</button>
+        <button class="tab" :class="{ active: tab === 'ai' }" type="button" @click="tab = 'ai'">AI Чат</button>
       </nav>
     </header>
     <SyncView
@@ -257,7 +259,8 @@ onMounted(() => {
       @set-encoding="setPlanEncoding"
     />
     <PlansView v-else-if="tab === 'plans'" :scan="scan" :hits="hits" :windows1251="settings.plan_windows1251" @create="createPlan" @search="search" @repair="repairEncoding" @set-encoding="setPlanEncoding" />
-    <UpdatesView v-else :info="updateInfo" :error="updateError" :busy="updateBusy" :saved-path="savedPath" @check="checkUpdate" @download="downloadUpdate" />
+    <UpdatesView v-else-if="tab === 'updates'" :info="updateInfo" :error="updateError" :busy="updateBusy" :saved-path="savedPath" @check="checkUpdate" @download="downloadUpdate" />
+    <AiChat v-else-if="tab === 'ai'" :logged-in="settings.logged_in" />
     <ConflictModal
       v-if="conflict"
       :row="conflict"
