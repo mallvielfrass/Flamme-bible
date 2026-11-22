@@ -7,7 +7,7 @@ import PlansView from "./components/PlansView.vue";
 import SyncView from "./components/SyncView.vue";
 import UpdatesView from "./components/UpdatesView.vue";
 import { api, type Dimension, type PlanItem, type Preview, type Progress, type Scan, type Settings, type SongHit, type SongRow, type UpdateView } from "./commands";
-import { canStart, decisionsFrom, planKey, songKey, type Choice } from "./syncState";
+import { canStart, conflictRows, decisionsFrom, planKey, songKey, type Choice } from "./syncState";
 
 const tab = ref<"sync" | "plans" | "updates">("sync");
 const settings = ref<Settings>({
@@ -38,10 +38,7 @@ const updateError = ref("");
 const updateBusy = ref(false);
 const savedPath = ref("");
 
-const conflictRows = computed(() => [
-  ...(preview.value?.songs ?? []).filter((row) => row.action === "conflict").map((row) => ({ action: row.action, key: songKey(row.book_path, row.fbid) })),
-  ...(preview.value?.plans ?? []).filter((row) => row.action === "conflict").map((row) => ({ action: row.action, key: planKey(row.key) })),
-]);
+const chosenRows = computed(() => conflictRows(preview.value?.songs ?? [], preview.value?.plans ?? []));
 
 function note(line: string) {
   log.value = [...log.value, line];
@@ -125,7 +122,7 @@ function remember(key: string, choice: Choice) {
 }
 
 async function start() {
-  if (!preview.value || !canStart(conflictRows.value, chosen.value)) return;
+  if (!preview.value || !canStart(chosenRows.value, chosen.value)) return;
   busy.value = "sync";
   error.value = "";
   const payload = decisionsFrom(
@@ -240,6 +237,7 @@ onMounted(() => {
       :error="error"
       :busy="busy"
       :conflict="conflict"
+      :chosen="chosen"
       @update:server-url="serverUrl = $event"
       @update:email="email = $event"
       @update:password="password = $event"

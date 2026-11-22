@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { Dimension, Preview, Progress, Scan, Settings, SongRow } from "../commands";
-import { actionLabel, foundLine, groupRows } from "../syncState";
+import { actionLabel, canStart, conflictRows, foundLine, groupRows, type Choice } from "../syncState";
 import EncodingNotice from "./EncodingNotice.vue";
 
 const props = defineProps<{
@@ -17,6 +17,7 @@ const props = defineProps<{
   error: string;
   busy: string;
   conflict: SongRow | null;
+  chosen: Record<string, Choice>;
 }>();
 
 const emit = defineEmits<{
@@ -43,8 +44,11 @@ const VISIOBIBLE_OPEN = "Закройте VisioBible и нажмите „Пов
 
 const songs = computed(() => groupRows(props.preview?.songs ?? []));
 const plans = computed(() => groupRows(props.preview?.plans ?? []));
-const conflictsLeft = computed(() => (props.preview?.songs ?? []).filter((row) => row.action === "conflict").length
-  + (props.preview?.plans ?? []).filter((row) => row.action === "conflict").length);
+const startReady = computed(() => {
+  const preview = props.preview;
+  if (!preview) return false;
+  return canStart(conflictRows(preview.songs, preview.plans), props.chosen);
+});
 const visiobibleOpen = computed(() => props.error === VISIOBIBLE_OPEN);
 </script>
 
@@ -151,8 +155,8 @@ const visiobibleOpen = computed(() => props.error === VISIOBIBLE_OPEN);
           <option value="windows-1251">Windows-1251</option>
         </select>
       </label>
-      <button class="btn primary" type="button" :disabled="busy !== '' || !preview || conflictsLeft > 0" @click="emit('start')">Начать синхронизацию</button>
-      <p v-if="conflictsLeft" class="error">Сначала выберите, что делать с конфликтами.</p>
+      <button class="btn primary" type="button" :disabled="busy !== '' || !startReady" @click="emit('start')">Начать синхронизацию</button>
+      <p v-if="preview && !startReady" class="error">Сначала выберите, что делать с конфликтами.</p>
       <p v-if="visiobibleOpen" class="error">{{ error }}</p>
       <button v-if="visiobibleOpen" class="btn primary" type="button" :disabled="busy !== ''" @click="emit('start')">Повторить</button>
       <p v-if="busy === 'sync'" class="hint">Идёт синхронизация…</p>
