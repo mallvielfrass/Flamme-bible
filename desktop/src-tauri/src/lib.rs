@@ -1,6 +1,7 @@
 mod config;
 mod mojibake;
 mod paths;
+mod plan_tab;
 mod plans;
 mod remote;
 mod running;
@@ -871,6 +872,17 @@ pub fn run() {
             download_update,
             set_close_guard,
             finish_close,
+            plan_tab::plans_list,
+            plan_tab::plans_read,
+            plan_tab::plans_create,
+            plan_tab::plans_save,
+            plan_tab::plans_delete,
+            plan_tab::plans_import,
+            plan_tab::plans_parse,
+            plan_tab::plans_download,
+            plan_tab::plans_folder,
+            plan_tab::plans_songbooks,
+            plan_tab::plans_find_songs,
         ])
         .run(tauri::generate_context!())
         .expect("окно не открылось");

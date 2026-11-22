@@ -4,11 +4,11 @@ import { listen } from "@tauri-apps/api/event";
 import CloseDialog from "./components/CloseDialog.vue";
 import ConflictModal from "./components/ConflictModal.vue";
 import LoginView from "./components/LoginView.vue";
-import PlansView from "./components/PlansView.vue";
 import SettingsModal, { type SettingsDraft } from "./components/SettingsModal.vue";
 import SyncView from "./components/SyncView.vue";
 import UpdatesView from "./components/UpdatesView.vue";
-import { api, type Dimension, type PlanItem, type Preview, type Progress, type Scan, type Settings, type SongHit, type SongRow, type UpdateView } from "./commands";
+import PlansTab from "./plans/PlansTab.vue";
+import { api, type Dimension, type Preview, type Progress, type Scan, type Settings, type SongRow, type UpdateView } from "./commands";
 import { adoptionKey, decisionsFrom, hasUnsyncedChanges, planKey, songKey, syncReady, type Choice } from "./syncState";
 
 const tab = ref<"sync" | "plans" | "updates">("sync");
@@ -39,7 +39,6 @@ const settingsBusy = ref(false);
 const chosen = ref<Record<string, Choice>>({});
 const adopted = ref<Record<string, true>>({});
 const conflict = ref<SongRow | null>(null);
-const hits = ref<SongHit[]>([]);
 const updateInfo = ref<UpdateView | null>(null);
 const updateError = ref("");
 const updateBusy = ref(false);
@@ -226,36 +225,6 @@ async function start() {
   }
 }
 
-async function repairEncoding(path: string) {
-  error.value = "";
-  try {
-    scan.value = await api.repairPlanEncoding(path);
-    preview.value = null;
-    note("Кодировка плана исправлена. Файл записан в UTF-8.");
-  } catch (err) {
-    error.value = message(err);
-  }
-}
-
-async function createPlan(name: string, items: PlanItem[]) {
-  error.value = "";
-  try {
-    await api.createPlan(name, items);
-    if (settings.value.visio_path) scan.value = await api.openVisio(settings.value.visio_path);
-    note(`План «${name}» сохранён на этом компьютере.`);
-  } catch (err) {
-    error.value = message(err);
-  }
-}
-
-async function search(query: string) {
-  try {
-    hits.value = await api.searchSongs(query);
-  } catch (err) {
-    error.value = message(err);
-  }
-}
-
 async function checkUpdate() {
   updateBusy.value = true;
   updateError.value = "";
@@ -386,7 +355,7 @@ onMounted(() => {
         @skip="(kind, id) => rememberSkip(kind, id, true)"
         @restore="(kind, id) => rememberSkip(kind, id, false)"
       />
-      <PlansView v-else-if="tab === 'plans'" :scan="scan" :hits="hits" @create="createPlan" @search="search" @repair="repairEncoding" />
+      <PlansTab v-else-if="tab === 'plans'" :logged-in="settings.logged_in" />
       <UpdatesView v-else :info="updateInfo" :error="updateError" :busy="updateBusy" :saved-path="savedPath" @check="checkUpdate" @download="downloadUpdate" />
     </main>
     <SettingsModal

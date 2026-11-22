@@ -454,10 +454,32 @@ h1, h2, h3, .brand, .auth-brand, .space-name, .title-serif, .quote {
   vertical-align: bottom;
 }
 
-.split-tab { position: relative; display: inline-flex; }
-.split-main { border-radius: 999px 0 0 999px; }
-.split-caret { border-radius: 0 999px 999px 0; border-left: 0; padding-left: 0.45rem; padding-right: 0.55rem; }
-.split-main.lone { border-radius: 999px; }
+.split-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+}
+.split-tab.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+.split-tab .split-label,
+.split-tab .split-caret {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  border-radius: 0;
+  padding: 0.4rem 0.85rem;
+  cursor: pointer;
+}
+.split-tab .split-caret {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.7rem 0 0.55rem;
+  border-left: 1px solid var(--line);
+}
+.split-tab.on .split-caret { border-left-color: #fff; }
 
 .menu {
   position: absolute;
