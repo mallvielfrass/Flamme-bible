@@ -99,3 +99,27 @@ export function passageItem({ translations, book, bookName, chapter, range, vers
     quote: rangeText(verses, range),
   })
 }
+
+/** Место из поиска (стих по словам или отрывок по смыслу) как выделение главы. */
+export function hitRange(hit) {
+  const start = Number(hit?.verse || hit?.verse_start) || 0
+  const end = Number(hit?.verse_end) || start
+  if (!start) return null
+  return { start, end: Math.max(start, end) }
+}
+
+/** Пункт плана прямо из результата поиска, с текстом из найденного перевода. */
+export function hitItem(translations, hit) {
+  const range = hitRange(hit)
+  const own = hit?.module_short_name || ''
+  const rest = translations.filter((name) => name !== own)
+  return bibleItem({
+    module_short_name: own || translations[0] || '',
+    module_short_name_second: own ? rest[0] || '' : translations[1] || '',
+    book: hit?.book,
+    chapter: hit?.chapter,
+    verse: range?.start || 0,
+    reference: hit?.reference || rangeLabel(hit?.book_name, hit?.chapter, range),
+    quote: hit?.text || '',
+  })
+}

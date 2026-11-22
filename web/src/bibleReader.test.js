@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   availableTranslations,
   cleanTranslations,
+  hitItem,
+  hitRange,
   loadTranslations,
   passageItem,
   rangeLabel,
@@ -89,5 +91,20 @@ describe('passage', () => {
       quote: '16 Ибо так возлюбил\n17 Ибо не послал',
     })
     expect(() => passageItem({ translations: ['RST'], book: 43, chapter: 3, range: null, verses })).toThrow()
+  })
+})
+
+describe('search hits', () => {
+  it('turns a word hit and a meaning passage into a range', () => {
+    expect(hitRange({ verse: 16 })).toEqual({ start: 16, end: 16 })
+    expect(hitRange({ verse_start: 16, verse_end: 19 })).toEqual({ start: 16, end: 19 })
+    expect(hitRange({})).toBeNull()
+  })
+
+  it('keeps the translation of the hit and adds another chosen one as second', () => {
+    const word = hitItem(['KJV', 'RST'], { module_short_name: 'RST', book: 43, book_name: 'Иоанн', chapter: 3, verse: 16, text: 'Ибо так' })
+    expect(word).toMatchObject({ module_short_name: 'RST', module_short_name_second: 'KJV', verse: 16, reference: 'Иоанн 3:16', quote: 'Ибо так' })
+    const meaning = hitItem(['RST'], { module_short_name: 'RST', book: 19, chapter: 22, verse_start: 1, verse_end: 4, reference: 'Псалтирь 22:1-4', text: '1 Господь' })
+    expect(meaning).toMatchObject({ module_short_name: 'RST', module_short_name_second: '', verse: 1, reference: 'Псалтирь 22:1-4' })
   })
 })
