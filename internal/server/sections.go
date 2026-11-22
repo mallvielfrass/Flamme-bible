@@ -47,7 +47,15 @@ func (s *Server) songbookTree(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, err)
 		return
 	}
-	ctx := r.Context()
+	out, err := s.loadTree(r.Context(), p.UserID)
+	if err != nil {
+		writeMapped(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) loadTree(ctx context.Context, userID string) ([]treeGroup, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT b.id::text, b.title, b.short_name, b.status, b.dimension_id::text, d.kind, d.name,
 		       EXISTS (
@@ -65,10 +73,9 @@ func (s *Server) songbookTree(w http.ResponseWriter, r *http.Request) {
 		        )
 		      )
 		ORDER BY d.name, b.title, b.id
-	`, p.UserID)
+	`, userID)
 	if err != nil {
-		writeMapped(w, err)
-		return
+		return nil, err
 	}
 	defer rows.Close()
 	type bookRow struct {
@@ -83,16 +90,14 @@ func (s *Server) songbookTree(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var row bookRow
 		if err := rows.Scan(&row.book.ID, &row.book.Title, &row.book.ShortName, &row.book.Status, &row.dim, &row.kind, &row.name, &row.own); err != nil {
-			writeMapped(w, err)
-			return
+			return nil, err
 		}
 		row.book.Sections = []treeSection{}
 		books = append(books, row)
 		ids = append(ids, row.book.ID)
 	}
 	if err := rows.Err(); err != nil {
-		writeMapped(w, err)
-		return
+		return nil, err
 	}
 	rows.Close()
 	byBook := map[string][]treeSection{}
@@ -105,28 +110,24 @@ func (s *Server) songbookTree(w http.ResponseWriter, r *http.Request) {
 			ORDER BY sec.position, sec.title, sec.id
 		`, ids)
 		if err != nil {
-			writeMapped(w, err)
-			return
+			return nil, err
 		}
 		defer secRows.Close()
 		for secRows.Next() {
 			var bookID string
 			var sec treeSection
 			if err := secRows.Scan(&bookID, &sec.ID, &sec.Title, &sec.Count); err != nil {
-				writeMapped(w, err)
-				return
+				return nil, err
 			}
 			byBook[bookID] = append(byBook[bookID], sec)
 		}
 		if err := secRows.Err(); err != nil {
-			writeMapped(w, err)
-			return
+			return nil, err
 		}
 	}
 	indexCounts, err := s.songIndexCounts(ctx, ids)
 	if err != nil {
-		writeMapped(w, err)
-		return
+		return nil, err
 	}
 	var personal *treeGroup
 	var approved *treeGroup
@@ -174,7 +175,7 @@ func (s *Server) songbookTree(w http.ResponseWriter, r *http.Request) {
 	if approved != nil {
 		out = append(out, *approved)
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out, nil
 }
 
 func (s *Server) listSections(w http.ResponseWriter, r *http.Request) {
