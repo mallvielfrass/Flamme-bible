@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from '../stores/session'
+import PasswordInput from '../../shared/components/PasswordInput.vue'
 
 const props = defineProps({
   mode: {
@@ -64,17 +65,16 @@ async function submit() {
     </label>
     <label>
       Пароль
-      <input
+      <PasswordInput
         v-model="password"
         name="password"
-        type="password"
         :autocomplete="mode === 'register' ? 'new-password' : 'current-password'"
       />
       <span v-if="passwordError" class="error">{{ passwordError }}</span>
     </label>
     <label v-if="mode === 'register'">
       Пароль ещё раз
-      <input v-model="passwordAgain" name="passwordAgain" type="password" autocomplete="new-password" />
+      <PasswordInput v-model="passwordAgain" name="passwordAgain" autocomplete="new-password" />
       <span v-if="againError" class="error">{{ againError }}</span>
     </label>
     <button class="btn primary" type="submit">
