@@ -110,7 +110,8 @@ export function hasUnsyncedChanges(
 }
 
 /** Решение при закрытии окна: только уже известное состояние, без сети.
- *  «ask» — показать диалог, если идёт синхронизация или в последней сверке есть расхождения.
+ *  «wait» — идёт синхронизация: показать прогресс и закрыть после неё.
+ *  «ask» — в последней сверке есть расхождения: показать диалог.
  *  «close» — закрыть сразу: сверки ещё не было или расхождений нет. */
 export function closeDecision(
   syncing: boolean,
@@ -119,8 +120,9 @@ export function closeDecision(
     plans: { action: string; absent?: boolean; server_id?: string }[];
   } | null,
   skips: SkipLists = { songbooks: [], plans: [] },
-): "ask" | "close" {
-  if (syncing || hasUnsyncedChanges(preview, skips)) return "ask";
+): "wait" | "ask" | "close" {
+  if (syncing) return "wait";
+  if (hasUnsyncedChanges(preview, skips)) return "ask";
   return "close";
 }
 

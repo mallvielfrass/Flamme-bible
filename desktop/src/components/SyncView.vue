@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import type { Preview, Progress, Scan, SongRow } from "../commands";
 import { placeLine, syncScreen, type ListedRow } from "../syncState";
+import SyncProgress from "./SyncProgress.vue";
 import type { Choice } from "../syncState";
 
 const props = defineProps<{
@@ -164,12 +165,7 @@ function restore(kind: string, id: string) {
         <button class="btn primary slim" type="button" :disabled="busy !== '' || !screen?.ready" @click="emit('start')">Начать синхронизацию</button>
         <p v-if="screen && !screen.ready" class="hint">{{ screen.hint }}</p>
       </div>
-      <div v-if="progress">
-        <div class="progress" role="progressbar" :aria-valuenow="progress.percentage" aria-valuemin="0" aria-valuemax="100">
-          <span :style="{ width: progress.percentage + '%' }"></span>
-        </div>
-        <p class="progress-label">{{ progress.stage }}: {{ progress.current }} — {{ progress.percentage }}%</p>
-      </div>
+      <SyncProgress v-if="progress" :progress="progress" />
       <ul v-if="log.length" class="list log">
         <li v-for="(line, index) in log" :key="index">{{ line }}</li>
       </ul>

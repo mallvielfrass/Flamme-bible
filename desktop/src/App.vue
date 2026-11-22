@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import AiChat from "./components/AiChat.vue";
 import CloseDialog from "./components/CloseDialog.vue";
 import ConflictModal from "./components/ConflictModal.vue";
+import SyncCloseModal from "./components/SyncCloseModal.vue";
 import LoginView from "./components/LoginView.vue";
 import SettingsModal, { type SettingsDraft } from "./components/SettingsModal.vue";
 import BibleModulesPanel from "./components/BibleModulesPanel.vue";
@@ -20,6 +21,7 @@ const ready = ref(false);
 const settingsOpen = ref(false);
 const closeAsk = ref(false);
 const closeBusy = ref(false);
+const closeAfterSync = ref(false);
 const settings = ref<Settings>({
   server_url: "http://localhost:8080",
   email: "",
@@ -256,11 +258,13 @@ async function start() {
     error.value = message(err);
   } finally {
     busy.value = "";
+    if (closeAfterSync.value && !error.value) void closeNow();
   }
 }
 
 async function closeNow() {
   closeAsk.value = false;
+  closeAfterSync.value = false;
   try {
     await api.finishClose();
   } catch (err) {
@@ -271,15 +275,18 @@ async function closeNow() {
 }
 
 // Закрытие не ждёт сеть: решение берётся из последней сверки. Повторный клик, пока идёт закрытие, повторяет finishClose.
+// Во время синхронизации показываем её прогресс и закрываем окно, когда она закончится.
 async function onCloseRequested() {
-  if (closeAsk.value) return;
+  if (closeAsk.value || closeAfterSync.value) return;
   if (closeBusy.value) {
     await closeNow();
     return;
   }
   closeBusy.value = true;
   try {
-    if (closeDecision(busy.value === "sync", preview.value) === "ask") closeAsk.value = true;
+    const decision = closeDecision(busy.value === "sync", preview.value);
+    if (decision === "wait") closeAfterSync.value = true;
+    else if (decision === "ask") closeAsk.value = true;
     else await closeNow();
   } finally {
     closeBusy.value = false;
@@ -377,6 +384,13 @@ onMounted(() => {
       @close="settingsOpen = false"
       @logout="logout"
       @save="saveSettings"
+    />
+    <SyncCloseModal
+      v-if="closeAfterSync"
+      :progress="progress"
+      :error="busy === 'sync' ? '' : error"
+      @cancel="closeAfterSync = false"
+      @close="closeAnyway"
     />
     <CloseDialog v-if="closeAsk" @close="closeAsk = false" @discard="closeAnyway" @sync="goSync" />
     <ConflictModal

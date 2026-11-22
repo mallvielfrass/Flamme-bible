@@ -93,11 +93,11 @@ describe("sync screen state", () => {
     ).toBe(true);
   });
 
-  it("asks to close only when a sync is running or the last preview still has local changes", () => {
+  it("waits for a running sync and asks only when the last preview still has changes", () => {
     expect(closeDecision(false, null)).toBe("close");
     expect(closeDecision(false, { songs: [{ action: "unchanged" }], plans: [] })).toBe("close");
-    expect(closeDecision(true, null)).toBe("ask");
-    expect(closeDecision(true, { songs: [{ action: "unchanged" }], plans: [] })).toBe("ask");
+    expect(closeDecision(true, null)).toBe("wait");
+    expect(closeDecision(true, { songs: [{ action: "push_update" }], plans: [] })).toBe("wait");
     expect(closeDecision(false, { songs: [{ action: "push_update" }], plans: [] })).toBe("ask");
     expect(closeDecision(false, { songs: [], plans: [{ action: "pull_add" }] })).toBe("ask");
     expect(
