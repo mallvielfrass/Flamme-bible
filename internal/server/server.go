@@ -277,6 +277,8 @@ func writeMapped(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusTooManyRequests, errJSON("Слишком много сообщений"))
 	case errors.Is(err, errAIModel):
 		writeJSON(w, http.StatusBadRequest, errJSON("Не выбрана модель"))
+	case errors.Is(err, errAIImage), errors.Is(err, errAIVision):
+		writeJSON(w, http.StatusBadRequest, errJSON(err.Error()))
 	case errors.Is(err, errUnmappable):
 		writeJSON(w, http.StatusBadRequest, errJSON("в тексте есть символы, которых нет в windows-1251"))
 	case errors.Is(err, errModuleStore):
