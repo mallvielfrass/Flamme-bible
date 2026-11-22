@@ -114,21 +114,33 @@ func (s *Server) applyPush(ctx context.Context, p principal, dimID, bookID strin
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := membershipTx(ctx, tx, p.UserID, dimID); err != nil {
-		return nil, err
-	}
-	var bookDim string
-	err = tx.QueryRow(ctx, `SELECT dimension_id::text FROM songbooks WHERE id = $1`, bookID).Scan(&bookDim)
-	if err == pgx.ErrNoRows || (err == nil && bookDim != dimID) {
-		return nil, errNotFound
-	}
+	results, prepared, err := s.applyPushTx(ctx, tx, p, dimID, bookID, base, ops)
 	if err != nil {
 		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	s.noteAppliedSongs(bookID, prepared, results)
+	return results, nil
+}
+
+func (s *Server) applyPushTx(ctx context.Context, tx pgx.Tx, p principal, dimID, bookID string, base int64, ops []operationDTO) ([]opResult, []preparedOp, error) {
+	if _, err := membershipTx(ctx, tx, p.UserID, dimID); err != nil {
+		return nil, nil, err
+	}
+	var bookDim string
+	err := tx.QueryRow(ctx, `SELECT dimension_id::text FROM songbooks WHERE id = $1`, bookID).Scan(&bookDim)
+	if err == pgx.ErrNoRows || (err == nil && bookDim != dimID) {
+		return nil, nil, errNotFound
+	}
+	if err != nil {
+		return nil, nil, err
 	}
 	// Номер выдаётся только под блокировкой счётчика этого пространства.
 	var seq int64
 	if err := tx.QueryRow(ctx, `SELECT seq FROM sync_counters WHERE dimension_id = $1 FOR UPDATE`, dimID).Scan(&seq); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	prepared := make([]preparedOp, len(ops))
 	hasNew := false
@@ -148,10 +160,10 @@ func (s *Server) applyPush(ctx context.Context, p principal, dimID, bookID strin
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if !bytes.Equal(got, hash) {
-			return nil, errOpBody
+			return nil, nil, errOpBody
 		}
 		prepared[i] = preparedOp{op: op, hash: hash, replay: stored}
 	}
@@ -162,7 +174,7 @@ func (s *Server) applyPush(ctx context.Context, p principal, dimID, bookID strin
 		if item.replay != nil {
 			var prev opResult
 			if err := json.Unmarshal(item.replay, &prev); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			results[i] = prev
 			continue
@@ -170,7 +182,7 @@ func (s *Server) applyPush(ctx context.Context, p principal, dimID, bookID strin
 		if conflict {
 			res, err := saveConflict(ctx, tx, dimID, bookID, p.DeviceID, item)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			results[i] = res
 			continue
@@ -178,20 +190,16 @@ func (s *Server) applyPush(ctx context.Context, p principal, dimID, bookID strin
 		next++
 		res, err := saveApplied(ctx, tx, dimID, bookID, p.DeviceID, next, item)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		results[i] = res
 	}
 	if next != seq {
 		if _, err := tx.Exec(ctx, `UPDATE sync_counters SET seq = $2 WHERE dimension_id = $1`, dimID, next); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-	s.noteAppliedSongs(bookID, prepared, results)
-	return results, nil
+	return results, prepared, nil
 }
 
 func saveApplied(ctx context.Context, tx pgx.Tx, dimID, bookID, deviceID string, seq int64, item preparedOp) (opResult, error) {
