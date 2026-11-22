@@ -117,8 +117,10 @@ func (s *Server) uploadBibleModule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.MultipartForm.RemoveAll()
+	// Сайт не считает хеш: без трёх полей имя и хеш берутся из самих файлов.
+	fromFiles := r.FormValue("content_hash") == "" && r.FormValue("short_name") == "" && r.FormValue("title") == ""
 	hash, shortName, title, ok := moduleIdentityFields(r.FormValue("content_hash"), r.FormValue("short_name"), r.FormValue("title"))
-	if !ok {
+	if !ok && !fromFiles {
 		writeMapped(w, errRequest)
 		return
 	}
@@ -169,11 +171,11 @@ func (s *Server) uploadBibleModule(w http.ResponseWriter, r *http.Request) {
 		writeModuleErr(w, err)
 		return
 	}
-	if err := rejectExtraModuleFiles(tmp, ident); err != nil {
+	if err := checkExtraModuleFiles(tmp, ident, fromFiles); err != nil {
 		writeMapped(w, err)
 		return
 	}
-	if ident.ContentHash != hash || ident.ShortName != shortName || ident.Title != title {
+	if !fromFiles && (ident.ContentHash != hash || ident.ShortName != shortName || ident.Title != title) {
 		writeMapped(w, errRequest)
 		return
 	}
@@ -622,7 +624,9 @@ func readModuleRel(root, path string) ([]byte, string, error) {
 	return data, strings.Join(built, "/"), nil
 }
 
-func rejectExtraModuleFiles(root string, ident BibleIdentity) error {
+// checkExtraModuleFiles отклоняет файлы вне bibleqt.ini, а при drop удаляет их:
+// из папки на сайте приходит всё подряд.
+func checkExtraModuleFiles(root string, ident BibleIdentity, drop bool) error {
 	keep := map[string]bool{}
 	for _, rel := range ident.Files {
 		keep[rel] = true
@@ -638,9 +642,12 @@ func rejectExtraModuleFiles(root string, ident BibleIdentity) error {
 		if err != nil {
 			return errRequest
 		}
-		if !keep[filepath.ToSlash(rel)] {
-			return errRequest
+		if keep[filepath.ToSlash(rel)] {
+			return nil
 		}
-		return nil
+		if drop {
+			return os.Remove(path)
+		}
+		return errRequest
 	})
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -218,6 +219,41 @@ func TestBibleModuleUploadRejects(t *testing.T) {
 	code, raw = uploadSample(t, limited, limitedUser.Token, sampleHash)
 	if code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("размер %d %s", code, raw)
+	}
+}
+
+// Сайт шлёт файлы папки без хеша: имя и хеш считает сервер, лишнее не хранится.
+func TestBibleModuleUploadFromSite(t *testing.T) {
+	root := t.TempDir()
+	store := filepath.Join(root, "bible-modules")
+	if err := os.Mkdir(store, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	srv := newBibleServer(t, store, 0)
+	owner := registerUser(t, srv, "owner@example.com", "secret-pass", nil)
+
+	files := sampleFiles()
+	files["notes.txt"] = []byte("лишнее")
+	code, raw := uploadFiles(t, srv, owner.Token, "", "EX", "", files)
+	if code != http.StatusBadRequest {
+		t.Fatalf("неполные поля %d %s", code, raw)
+	}
+	code, raw = uploadFiles(t, srv, owner.Token, "", "", "", files)
+	if code != http.StatusOK {
+		t.Fatalf("с сайта %d %s", code, raw)
+	}
+	var view moduleSyncView
+	if err := json.Unmarshal(raw, &view); err != nil {
+		t.Fatal(err)
+	}
+	if !view.Uploaded || view.ContentHash != sampleHash || view.ShortName != "EX" || view.Title != "Пример" {
+		t.Fatalf("%+v", view)
+	}
+	if _, err := os.Stat(filepath.Join(store, view.ID, "notes.txt")); !os.IsNotExist(err) {
+		t.Fatal("лишний файл сохранён")
+	}
+	if _, err := os.Stat(filepath.Join(store, view.ID, "grief.htm")); err != nil {
+		t.Fatal(err)
 	}
 }
 

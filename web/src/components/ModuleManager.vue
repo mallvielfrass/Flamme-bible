@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { api, explain } from '../api'
-import { canSubmit, moduleNameOk, statusText } from '../checks'
+import { api, apiForm, explain } from '../api'
+import { canSubmit, moduleNameOk, moduleUploadParts, statusText } from '../checks'
 import { useSessionStore } from '../stores/session'
 
 const props = defineProps({
@@ -16,6 +16,7 @@ const error = ref('')
 const notice = ref('')
 const loading = ref(false)
 const busy = ref(false)
+const progress = ref('')
 
 const space = computed(() => session.spaces.find((item) => item.id === props.dimensionId) || null)
 
@@ -64,6 +65,33 @@ async function createModule() {
   }
 }
 
+async function uploadFolder(event) {
+  const input = event.target
+  const parts = moduleUploadParts(input.files)
+  input.value = ''
+  error.value = ''
+  notice.value = ''
+  if (!parts.length) return
+  const form = new FormData()
+  for (const part of parts) form.append('file', part.file, part.name)
+  busy.value = true
+  try {
+    const saved = await apiForm('/api/modules/upload', {
+      form,
+      token: session.token,
+      onProgress: (sent, total) => { progress.value = `${Math.round((sent / total) * 100)}%` },
+    })
+    const name = saved.title || saved.short_name
+    notice.value = saved.uploaded ? `Модуль «${name}» загружен как черновик.` : `Модуль «${name}» уже есть на сервере.`
+    await load()
+  } catch (err) {
+    error.value = err.status === 413 ? 'Модуль больше 64 МБ, сервер его не примет.' : explain(err)
+  } finally {
+    busy.value = false
+    progress.value = ''
+  }
+}
+
 async function submit(item) {
   error.value = ''
   notice.value = ''
@@ -102,6 +130,14 @@ watch(() => props.dimensionId, load, { immediate: true })
       <button v-if="canSubmit(item.status)" class="btn slim primary" type="button" :disabled="busy" @click="submit(item)">Отправить на публикацию</button>
     </li>
   </ul>
+  <section class="card">
+    <h2>Загрузить модуль</h2>
+    <p class="hint">Выберите папку модуля с файлом bibleqt.ini. Имя и название возьмутся из него.</p>
+    <label class="btn" :class="{ disabled: busy }">
+      {{ progress ? `Загрузка ${progress}` : 'Выбрать папку' }}
+      <input type="file" webkitdirectory multiple hidden :disabled="busy" @change="uploadFolder" />
+    </label>
+  </section>
   <section class="card">
     <h2>Новый модуль</h2>
     <form @submit.prevent="createModule">
