@@ -41,6 +41,13 @@ function toggleExpand(row) {
   const key = keyOf(row)
   emit('update:expanded', props.expanded === key ? '' : key)
 }
+
+function columnClass(column) {
+  const list = []
+  if (column.align === 'right') list.push('num')
+  if (column.class) list.push(column.class)
+  return list
+}
 </script>
 
 <template>
@@ -52,7 +59,7 @@ function toggleExpand(row) {
             <input type="checkbox" :checked="allOn" aria-label="Выбрать все" :disabled="loading || !rows.length" @change="toggleAll" />
           </th>
           <th v-if="expandable" class="chevron"></th>
-          <th v-for="column in columns" :key="column.key" :class="{ num: column.align === 'right' }">{{ column.label }}</th>
+          <th v-for="column in columns" :key="column.key" :class="columnClass(column)">{{ column.label }}</th>
         </tr>
       </thead>
       <tbody v-if="loading">
@@ -88,7 +95,7 @@ function toggleExpand(row) {
                 @click="toggleExpand(row)"
               />
             </td>
-            <td v-for="column in columns" :key="column.key" :class="{ num: column.align === 'right' }">
+            <td v-for="column in columns" :key="column.key" :class="columnClass(column)">
               <slot :name="`cell-${column.key}`" :row="row">{{ row[column.key] }}</slot>
             </td>
           </tr>

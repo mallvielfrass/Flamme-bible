@@ -202,6 +202,10 @@ npm run build
 cargo test --manifest-path desktop/src-tauri/Cargo.toml
 ```
 
+## Значки
+
+На сайте не используется системный шрифт эмодзи. Нужные рисунки лежат в `web/src/assets/emoji/` и выводятся компонентом `Emoji`. Это графика Twemoji 16.0.1 (Twitter, Inc. и другие участники, проект jdecked/twemoji). Графика распространяется по лицензии CC BY 4.0, текст лицензии — `web/src/assets/emoji/LICENSE-GRAPHICS`. Рисунки не изменялись. Полный шрифт и загрузка значков с чужого сервера не используются.
+
 ## Ссылки
 
 - `docs/api-mvp.md` — описание запросов к серверу

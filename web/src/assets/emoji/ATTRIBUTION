@@ -1,0 +1,13 @@
+Twemoji graphics
+Copyright Twitter, Inc and other contributors
+
+These files are unmodified SVG artwork from Twemoji 16.0.1
+(project jdecked/twemoji). The graphics are licensed under
+Creative Commons Attribution 4.0 International.
+The license text is LICENSE-GRAPHICS in this directory.
+
+people.svg    U+1F465
+shield.svg    U+1F6E1
+books.svg     U+1F4DA
+calendar.svg  U+1F5D3
+laptop.svg    U+1F4BB
