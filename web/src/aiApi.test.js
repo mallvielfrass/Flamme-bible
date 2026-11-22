@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readSSE } from './aiApi'
+import { createAiApi, readSSE } from '../shared/ai/aiApi.js'
 
 function streamFrom(chunks) {
   const encoder = new TextEncoder()
@@ -32,5 +32,23 @@ describe('readSSE', () => {
     expect(events[1].data.text).toBe('Привет')
     expect(events[2].data.prompt_tokens).toBe(2)
     expect(events[3].data.stopped).toBe(false)
+  })
+})
+
+describe('createAiApi', () => {
+  it('calls the fetch passed by the host', async () => {
+    let seen = ''
+    const client = createAiApi({
+      baseUrl: 'https://example.com',
+      getAuth: () => 'token',
+      fetch: async (path, init) => {
+        seen = path
+        expect(init.headers.Authorization).toBe('Bearer token')
+        return { ok: true, status: 200, json: async () => ({ chats: [] }) }
+      },
+    })
+    const data = await client.listChats('мир')
+    expect(seen).toBe('https://example.com/api/ai/chats?q=%D0%BC%D0%B8%D1%80')
+    expect(data.chats).toEqual([])
   })
 })

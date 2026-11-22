@@ -1,10 +1,11 @@
 <script setup>
 import { onMounted, ref, watch } from 'vue'
-import { explain } from '../../api'
-import { useAiStore } from '../../stores/ai'
-import ConfirmDialog from '../../../shared/components/ConfirmDialog.vue'
+import { explain } from '../http.js'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
+import { useAiStore } from './store.js'
 import ChatList from './ChatList.vue'
 import ChatThread from './ChatThread.vue'
+import './chat.css'
 
 const props = defineProps({
   chatId: { type: String, default: '' },

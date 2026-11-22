@@ -1,13 +1,11 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from './stores/session'
-import AiSettingsModal from './components/AiSettingsModal.vue'
 
 const session = useSessionStore()
 const route = useRoute()
 const router = useRouter()
-const aiOpen = ref(false)
 
 const authScreen = computed(() => route.path === '/login' || route.path === '/register')
 const songsTo = computed(() => (session.token ? '/songbooks' : '/catalog'))
@@ -57,9 +55,6 @@ async function logout() {
     </nav>
   </header>
   <main :class="{ 'auth-main': authScreen, 'chat-main': on('ai') }">
-    <router-view v-slot="{ Component }">
-      <component :is="Component" @open-ai-settings="aiOpen = true" />
-    </router-view>
+    <router-view />
   </main>
-  <AiSettingsModal v-if="aiOpen" @close="aiOpen = false" />
 </template>
