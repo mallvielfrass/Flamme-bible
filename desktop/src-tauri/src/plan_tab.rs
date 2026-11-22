@@ -482,7 +482,7 @@ pub async fn plans_download(
     fs::write(&dest, bytes).map_err(|err| err.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn plans_folder() -> Result<Vec<FolderPlan>, String> {
     let (_, cfg) = load()?;
     if cfg.visio_path.is_empty() {

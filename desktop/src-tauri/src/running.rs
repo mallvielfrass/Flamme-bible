@@ -12,19 +12,21 @@ const EXE: &str = "visiobible.exe";
 /// `true`, если процесс VisioBible уже есть.
 /// Пустой снимок значит, что процессы прочитать не удалось: тогда пишем в лог и не блокируем запись.
 pub fn visiobible_running() -> bool {
-    let mut system = System::new();
-    let updated = system.refresh_processes_specifics(
-        ProcessesToUpdate::All,
-        true,
+    let windows = cfg!(windows);
+    // На Windows хватает имени процесса: чтение командной строки каждого процесса там медленное.
+    let kind = if windows {
+        ProcessRefreshKind::nothing().without_tasks()
+    } else {
         ProcessRefreshKind::nothing()
             .with_cmd(UpdateKind::Always)
-            .without_tasks(),
-    );
+            .without_tasks()
+    };
+    let mut system = System::new();
+    let updated = system.refresh_processes_specifics(ProcessesToUpdate::All, true, kind);
     if updated == 0 {
         eprintln!("не удалось прочитать список процессов");
         return false;
     }
-    let windows = cfg!(windows);
     system.processes().values().any(|process| {
         let name = process.name().to_string_lossy();
         if windows {

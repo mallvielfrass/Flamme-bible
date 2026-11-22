@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import AiChat from "./components/AiChat.vue";
 import CloseDialog from "./components/CloseDialog.vue";
 import ConflictModal from "./components/ConflictModal.vue";
+import SyncCloseModal from "./components/SyncCloseModal.vue";
 import LoginView from "./components/LoginView.vue";
 import SettingsModal, { type SettingsDraft } from "./components/SettingsModal.vue";
 import BibleModulesPanel from "./components/BibleModulesPanel.vue";
@@ -11,7 +12,7 @@ import SyncView from "./components/SyncView.vue";
 import PlansTab from "./plans/PlansTab.vue";
 import UpdatesTab from "./updates/UpdatesTab.vue";
 import { api, type BibleLink, type Dimension, type Preview, type Progress, type Scan, type Settings, type SongRow } from "./commands";
-import { adoptionKey, decisionsFrom, groupKey, hasUnsyncedChanges, planKey, songKey, syncReady, type Choice } from "./syncState";
+import { adoptionKey, closeDecision, decisionsFrom, groupKey, planKey, songKey, syncReady, type Choice } from "./syncState";
 
 const tab = ref<"sync" | "plans" | "updates" | "ai">(
   import.meta.env.DEV && new URLSearchParams(location.search).has("updates-preview") ? "updates" : "sync",
@@ -20,6 +21,7 @@ const ready = ref(false);
 const settingsOpen = ref(false);
 const closeAsk = ref(false);
 const closeBusy = ref(false);
+const closeAfterSync = ref(false);
 const settings = ref<Settings>({
   server_url: "http://localhost:8080",
   email: "",
@@ -62,12 +64,7 @@ function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-let booting: Promise<void> | null = null;
-
-function startBoot() {
-  booting ??= boot();
-  return booting;
-}
+let workspace: Promise<void> = Promise.resolve();
 
 async function boot() {
   if (import.meta.env.DEV && new URLSearchParams(location.search).has("updates-preview")) {
@@ -77,20 +74,32 @@ async function boot() {
   }
   try {
     settings.value = await api.loadSettings();
-    if (settings.value.visio_path) {
-      scan.value = await api.openVisio(settings.value.visio_path);
-    }
-    if (settings.value.logged_in) {
-      dimensions.value = await api.dimensions();
-      if (scan.value && !scan.value.needs_choice) await loadPreview(false);
-    }
     bibleLinks.value = await api.bibleLinks();
   } catch (err) {
-    const text = message(err);
-    if (settings.value.logged_in) error.value = text;
-    else authError.value = text;
+    authError.value = message(err);
   } finally {
     ready.value = true;
+  }
+  workspace = loadWorkspace();
+}
+
+// Папка и сверка с сервером грузятся уже при открытом окне: экран синхронизации пишет «Смотрим, что изменилось…».
+async function loadWorkspace() {
+  const loggedIn = settings.value.logged_in;
+  if (loggedIn) busy.value = "preview";
+  try {
+    const [opened, spaces] = await Promise.all([
+      settings.value.visio_path ? api.openVisio(settings.value.visio_path) : null,
+      loggedIn ? api.dimensions() : [],
+    ]);
+    scan.value = opened;
+    dimensions.value = spaces;
+    if (loggedIn && scan.value && !scan.value.needs_choice) await loadPreview(false);
+  } catch (err) {
+    if (loggedIn) error.value = message(err);
+    else authError.value = message(err);
+  } finally {
+    if (busy.value === "preview") busy.value = "";
   }
 }
 
@@ -105,6 +114,7 @@ async function enter(mode: "login" | "register", serverUrl: string, email: strin
     tab.value = "sync";
     dimensions.value = await api.dimensions();
     note(mode === "register" ? "Учётная запись создана." : "Вход выполнен.");
+    await workspace;
     if (scan.value && !scan.value.needs_choice) await loadPreview(true);
   } catch (err) {
     const text = message(err);
@@ -248,32 +258,36 @@ async function start() {
     error.value = message(err);
   } finally {
     busy.value = "";
+    if (closeAfterSync.value && !error.value) void closeNow();
   }
 }
 
-async function unsyncedNow(): Promise<boolean> {
-  if (busy.value === "sync") return true;
-  if (settings.value.logged_in && scan.value && !scan.value.needs_choice) {
-    try {
-      preview.value = await api.preview();
-    } catch {
-      // Остаётся последний удачный список.
-    }
-  }
-  return hasUnsyncedChanges(preview.value);
-}
-
-async function onCloseRequested() {
-  if (closeAsk.value || closeBusy.value) return;
-  closeBusy.value = true;
+async function closeNow() {
+  closeAsk.value = false;
+  closeAfterSync.value = false;
   try {
-    await startBoot();
-    if (await unsyncedNow()) closeAsk.value = true;
-    else await api.finishClose();
+    await api.finishClose();
   } catch (err) {
     const text = message(err);
     if (settings.value.logged_in) error.value = text;
     else authError.value = text;
+  }
+}
+
+// Закрытие не ждёт сеть: решение берётся из последней сверки. Повторный клик, пока идёт закрытие, повторяет finishClose.
+// Во время синхронизации показываем её прогресс и закрываем окно, когда она закончится.
+async function onCloseRequested() {
+  if (closeAsk.value || closeAfterSync.value) return;
+  if (closeBusy.value) {
+    await closeNow();
+    return;
+  }
+  closeBusy.value = true;
+  try {
+    const decision = closeDecision(busy.value === "sync", preview.value);
+    if (decision === "wait") closeAfterSync.value = true;
+    else if (decision === "ask") closeAsk.value = true;
+    else await closeNow();
   } finally {
     closeBusy.value = false;
   }
@@ -286,19 +300,12 @@ function goSync() {
   if (syncReady(preview.value, chosen.value, adopted.value)) void start();
 }
 
-async function closeAnyway() {
-  closeAsk.value = false;
-  try {
-    await api.finishClose();
-  } catch (err) {
-    const text = message(err);
-    if (settings.value.logged_in) error.value = text;
-    else authError.value = text;
-  }
+function closeAnyway() {
+  void closeNow();
 }
 
 onMounted(() => {
-  void startBoot();
+  void boot();
   void listen<Progress>("sync-progress", (event) => {
     progress.value = event.payload;
   }).catch(() => undefined);
@@ -377,6 +384,13 @@ onMounted(() => {
       @close="settingsOpen = false"
       @logout="logout"
       @save="saveSettings"
+    />
+    <SyncCloseModal
+      v-if="closeAfterSync"
+      :progress="progress"
+      :error="busy === 'sync' ? '' : error"
+      @cancel="closeAfterSync = false"
+      @close="closeAnyway"
     />
     <CloseDialog v-if="closeAsk" @close="closeAsk = false" @discard="closeAnyway" @sync="goSync" />
     <ConflictModal

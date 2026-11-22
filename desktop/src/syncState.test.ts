@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionLabel, adoptionKey, bannerText, canStart, conflictRows, countPhrase, decisionsFrom, foundLine, freshChipText, groupKey, groupRows, hasUnsyncedChanges, planKey, songKey, syncCounts, syncReady, syncScreen, type PreviewData, type PreviewPlan, type PreviewSong } from "./syncState";
+import { actionLabel, adoptionKey, bannerText, canStart, closeDecision, conflictRows, countPhrase, decisionsFrom, foundLine, freshChipText, groupKey, groupRows, hasUnsyncedChanges, planKey, songKey, syncCounts, syncReady, syncScreen, type PreviewData, type PreviewPlan, type PreviewSong } from "./syncState";
 
 describe("sync screen state", () => {
   it("groups uploads, downloads and conflicts without showing raw codes", () => {
@@ -91,6 +91,18 @@ describe("sync screen state", () => {
         { songbooks: ["book-1"], plans: [] },
       ),
     ).toBe(true);
+  });
+
+  it("waits for a running sync and asks only when the last preview still has changes", () => {
+    expect(closeDecision(false, null)).toBe("close");
+    expect(closeDecision(false, { songs: [{ action: "unchanged" }], plans: [] })).toBe("close");
+    expect(closeDecision(true, null)).toBe("wait");
+    expect(closeDecision(true, { songs: [{ action: "push_update" }], plans: [] })).toBe("wait");
+    expect(closeDecision(false, { songs: [{ action: "push_update" }], plans: [] })).toBe("ask");
+    expect(closeDecision(false, { songs: [], plans: [{ action: "pull_add" }] })).toBe("ask");
+    expect(
+      closeDecision(false, { songs: [{ action: "pull_add", absent: true, server_id: "book-1" }], plans: [] }, { songbooks: ["book-1"], plans: [] }),
+    ).toBe("close");
   });
 });
 

@@ -109,6 +109,23 @@ export function hasUnsyncedChanges(
   return [...songs, ...plans].some((row) => row.action !== "unchanged");
 }
 
+/** Решение при закрытии окна: только уже известное состояние, без сети.
+ *  «wait» — идёт синхронизация: показать прогресс и закрыть после неё.
+ *  «ask» — в последней сверке есть расхождения: показать диалог.
+ *  «close» — закрыть сразу: сверки ещё не было или расхождений нет. */
+export function closeDecision(
+  syncing: boolean,
+  preview: {
+    songs: { action: string; absent?: boolean; server_id?: string }[];
+    plans: { action: string; absent?: boolean; server_id?: string }[];
+  } | null,
+  skips: SkipLists = { songbooks: [], plans: [] },
+): "wait" | "ask" | "close" {
+  if (syncing) return "wait";
+  if (hasUnsyncedChanges(preview, skips)) return "ask";
+  return "close";
+}
+
 export function conflictRows(
   songs: { action: string; book_path: string; fbid: string }[],
   plans: { action: string; key: string }[],
