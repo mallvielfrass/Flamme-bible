@@ -6,12 +6,14 @@ import ConflictModal from "./components/ConflictModal.vue";
 import LoginView from "./components/LoginView.vue";
 import SettingsModal, { type SettingsDraft } from "./components/SettingsModal.vue";
 import SyncView from "./components/SyncView.vue";
-import UpdatesView from "./components/UpdatesView.vue";
 import PlansTab from "./plans/PlansTab.vue";
-import { api, type Dimension, type Preview, type Progress, type Scan, type Settings, type SongRow, type UpdateView } from "./commands";
+import UpdatesTab from "./updates/UpdatesTab.vue";
+import { api, type Dimension, type Preview, type Progress, type Scan, type Settings, type SongRow } from "./commands";
 import { adoptionKey, decisionsFrom, hasUnsyncedChanges, planKey, songKey, syncReady, type Choice } from "./syncState";
 
-const tab = ref<"sync" | "plans" | "updates">("sync");
+const tab = ref<"sync" | "plans" | "updates">(
+  import.meta.env.DEV && new URLSearchParams(location.search).has("updates-preview") ? "updates" : "sync",
+);
 const ready = ref(false);
 const settingsOpen = ref(false);
 const closeAsk = ref(false);
@@ -39,10 +41,6 @@ const settingsBusy = ref(false);
 const chosen = ref<Record<string, Choice>>({});
 const adopted = ref<Record<string, true>>({});
 const conflict = ref<SongRow | null>(null);
-const updateInfo = ref<UpdateView | null>(null);
-const updateError = ref("");
-const updateBusy = ref(false);
-const savedPath = ref("");
 
 const spaceName = computed(() => {
   const found = dimensions.value.find((space) => space.id === settings.value.dimension_id);
@@ -67,6 +65,11 @@ function startBoot() {
 }
 
 async function boot() {
+  if (import.meta.env.DEV && new URLSearchParams(location.search).has("updates-preview")) {
+    settings.value = { ...settings.value, server_url: "https://example.com", email: "choir@example.com", logged_in: true };
+    ready.value = true;
+    return;
+  }
   try {
     settings.value = await api.loadSettings();
     if (settings.value.visio_path) {
@@ -225,30 +228,6 @@ async function start() {
   }
 }
 
-async function checkUpdate() {
-  updateBusy.value = true;
-  updateError.value = "";
-  try {
-    updateInfo.value = await api.checkUpdate();
-  } catch (err) {
-    updateError.value = message(err);
-  } finally {
-    updateBusy.value = false;
-  }
-}
-
-async function downloadUpdate() {
-  updateBusy.value = true;
-  updateError.value = "";
-  try {
-    savedPath.value = await api.downloadUpdate();
-  } catch (err) {
-    updateError.value = message(err);
-  } finally {
-    updateBusy.value = false;
-  }
-}
-
 async function unsyncedNow(): Promise<boolean> {
   if (busy.value === "sync") return true;
   if (settings.value.logged_in && scan.value && !scan.value.needs_choice) {
@@ -356,7 +335,7 @@ onMounted(() => {
         @restore="(kind, id) => rememberSkip(kind, id, false)"
       />
       <PlansTab v-else-if="tab === 'plans'" :logged-in="settings.logged_in" />
-      <UpdatesView v-else :info="updateInfo" :error="updateError" :busy="updateBusy" :saved-path="savedPath" @check="checkUpdate" @download="downloadUpdate" />
+      <UpdatesTab v-else />
     </main>
     <SettingsModal
       v-if="settingsOpen"

@@ -110,14 +110,6 @@ export interface SongHit {
   songbook_title: string;
 }
 
-export interface UpdateView {
-  current: string;
-  latest: string;
-  notes: string;
-  available: boolean;
-  platform: string;
-}
-
 export const api = {
   version: () => invoke<string>("client_version"),
   loadSettings: () => invoke<Settings>("load_settings"),
@@ -137,8 +129,6 @@ export const api = {
     invoke<void>("set_skipped", { kind, id, skip }),
   createPlan: (name: string, items: PlanItem[]) => invoke<Scan["plans"][number]>("create_plan", { name, items }),
   searchSongs: (query: string) => invoke<SongHit[]>("search_songs", { query }),
-  checkUpdate: () => invoke<UpdateView>("check_update"),
-  downloadUpdate: () => invoke<string>("download_update"),
   setCloseGuard: (enabled: boolean) => invoke<void>("set_close_guard", { enabled }),
   finishClose: () => invoke<void>("finish_close"),
 };
