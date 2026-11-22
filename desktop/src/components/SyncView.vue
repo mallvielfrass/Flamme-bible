@@ -1,17 +1,12 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { Dimension, Preview, Progress, Scan, Settings, SongRow } from "../commands";
-import { actionLabel, canStart, conflictRows, foundLine, groupRows, type Choice } from "../syncState";
+import type { Preview, Progress, Scan, SongRow } from "../commands";
+import { actionLabel, canStart, conflictRows, groupRows, type Choice } from "../syncState";
 import EncodingNotice from "./EncodingNotice.vue";
 
 const props = defineProps<{
-  settings: Settings;
-  serverUrl: string;
-  email: string;
-  password: string;
   scan: Scan | null;
   preview: Preview | null;
-  dimensions: Dimension[];
   progress: Progress | null;
   log: string[];
   error: string;
@@ -21,23 +16,11 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  "update:serverUrl": [string];
-  "update:email": [string];
-  "update:password": [string];
-  saveServer: [];
-  login: [];
-  register: [];
-  logout: [];
-  pickRoot: [];
-  pickModules: [];
-  chooseCatalog: [string];
-  selectDimension: [string];
   refresh: [];
   start: [];
   openConflict: [SongRow];
   resolvePlan: [string, "keep_local" | "take_server" | "keep_both"];
   repair: [string];
-  setEncoding: [boolean];
 }>();
 
 const VISIOBIBLE_OPEN = "Закройте VisioBible и нажмите „Повторить“";
@@ -55,46 +38,9 @@ const visiobibleOpen = computed(() => props.error === VISIOBIBLE_OPEN);
 <template>
   <div class="steps">
     <section class="card">
-      <div class="step-head"><span class="num">1</span><h2>Подключение и папка VisioBible</h2></div>
-      <div class="grid">
-        <label>Адрес сервера
-          <input :value="serverUrl" @input="emit('update:serverUrl', ($event.target as HTMLInputElement).value)" />
-        </label>
-        <label>Почта<input :value="email" autocomplete="username" @input="emit('update:email', ($event.target as HTMLInputElement).value)" /></label>
-        <label>Пароль<input :value="password" type="password" autocomplete="current-password" @input="emit('update:password', ($event.target as HTMLInputElement).value)" /></label>
-      </div>
-      <div class="row" style="margin-top: 0.7rem">
-        <button class="btn" type="button" @click="emit('saveServer')">Сохранить адрес</button>
-        <button class="btn primary" type="button" :disabled="busy !== ''" @click="emit('login')">Войти</button>
-        <button class="btn" type="button" :disabled="busy !== ''" @click="emit('register')">Создать учётную запись</button>
-        <button v-if="settings.logged_in" class="btn" type="button" @click="emit('logout')">Выйти</button>
-      </div>
-      <p v-if="settings.logged_in" class="found">Вы вошли как {{ settings.email || "участник" }}.</p>
-      <label v-if="dimensions.length" style="margin-top: 0.7rem">Пространство
-        <select :value="settings.dimension_id" @change="emit('selectDimension', ($event.target as HTMLSelectElement).value)">
-          <option v-for="space in dimensions" :key="space.id" :value="space.id">
-            {{ space.name || (space.kind === "personal" ? "Личное" : "Община") }}
-          </option>
-        </select>
-      </label>
-      <p class="hint">Файл VisioBible.ini обычно лежит в папке программы, а сборники — в подпапке Modules или в C:\ProgramData\VisioBible V…\Modules.</p>
-      <div class="row">
-        <button class="btn primary" type="button" @click="emit('pickRoot')">Выбрать папку VisioBible</button>
-        <button class="btn" type="button" @click="emit('pickModules')">Выбрать папку Modules</button>
-      </div>
-      <p v-if="!scan" class="empty">Папка ещё не выбрана.</p>
-      <p v-else-if="scan.needs_choice" class="empty">Найдено несколько папок. Выберите одну:</p>
-      <div v-if="scan?.needs_choice" class="row">
-        <button v-for="catalog in scan.catalogs" :key="catalog" class="btn" type="button" @click="emit('chooseCatalog', catalog)">{{ catalog }}</button>
-      </div>
-      <p v-else-if="scan" class="found">{{ foundLine(scan.songbooks.length, scan.bibles.length, scan.plans.length) }}</p>
-      <p v-if="scan && !scan.needs_choice && scan.songbooks.length === 0" class="empty">В выбранной папке сборников не видно. Проверьте, что это Modules, а не сама программа.</p>
-    </section>
-
-    <section class="card">
-      <div class="step-head"><span class="num">2</span><h2>Список изменений перед запуском</h2></div>
+      <div class="step-head"><span class="num">1</span><h2>Список изменений перед запуском</h2></div>
       <EncodingNotice :plans="scan?.plans ?? []" @repair="emit('repair', $event)" />
-      <button class="btn" type="button" :disabled="busy !== '' || !settings.logged_in" @click="emit('refresh')">Показать, что изменится</button>
+      <button class="btn" type="button" :disabled="busy !== ''" @click="emit('refresh')">Показать, что изменится</button>
       <p v-if="busy === 'preview'" class="hint">Смотрим, что изменилось…</p>
       <p v-if="error && !visiobibleOpen" class="error">{{ error }}</p>
       <p v-for="warning in preview?.warnings ?? []" :key="warning" class="error">{{ warning }}</p>
@@ -147,14 +93,8 @@ const visiobibleOpen = computed(() => props.error === VISIOBIBLE_OPEN);
     </section>
 
     <section class="card">
-      <div class="step-head"><span class="num">3</span><h2>Запись</h2></div>
+      <div class="step-head"><span class="num">2</span><h2>Запись</h2></div>
       <p class="hint">Перед заменой сборника или плана программа сохранит рядом копию с окончанием .bak. Её можно вернуть, если новая запись не подойдёт.</p>
-      <label>Кодировка записи планов и PlanDef.ini
-        <select :value="settings.plan_windows1251 ? 'windows-1251' : 'utf-8'" @change="emit('setEncoding', ($event.target as HTMLSelectElement).value === 'windows-1251')">
-          <option value="utf-8">UTF-8</option>
-          <option value="windows-1251">Windows-1251</option>
-        </select>
-      </label>
       <button class="btn primary" type="button" :disabled="busy !== '' || !startReady" @click="emit('start')">Начать синхронизацию</button>
       <p v-if="preview && !startReady" class="error">Сначала выберите, что делать с конфликтами.</p>
       <p v-if="visiobibleOpen" class="error">{{ error }}</p>
