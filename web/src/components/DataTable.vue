@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import IconButton from './IconButton.vue'
+import IconButton from '../../shared/components/IconButton.vue'
 
 const props = defineProps({
   columns: { type: Array, required: true },

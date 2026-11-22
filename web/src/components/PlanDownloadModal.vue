@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import AppModal from './AppModal.vue'
+import AppModal from '../../shared/components/AppModal.vue'
 
 const props = defineProps({
   dirty: { type: Boolean, default: false },

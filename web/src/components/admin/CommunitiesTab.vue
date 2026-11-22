@@ -4,10 +4,10 @@ import { api, explain } from '../../api'
 import { formatWhen } from '../../checks'
 import { communityStats } from '../../stats'
 import { useSessionStore } from '../../stores/session'
-import AppModal from '../AppModal.vue'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import AppModal from '../../../shared/components/AppModal.vue'
+import ConfirmDialog from '../../../shared/components/ConfirmDialog.vue'
 import DataTable from '../DataTable.vue'
-import IconButton from '../IconButton.vue'
+import IconButton from '../../../shared/components/IconButton.vue'
 import StatChips from '../StatChips.vue'
 
 const session = useSessionStore()

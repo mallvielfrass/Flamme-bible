@@ -6,7 +6,7 @@ import SongSearch from '../components/SongSearch.vue'
 import SongbookManager from '../components/SongbookManager.vue'
 import ModuleManager from '../components/ModuleManager.vue'
 import PublicCatalog from '../components/PublicCatalog.vue'
-import SpaceFilter from '../components/SpaceFilter.vue'
+import SpaceFilter from '../../shared/components/SpaceFilter.vue'
 
 const route = useRoute()
 const session = useSessionStore()

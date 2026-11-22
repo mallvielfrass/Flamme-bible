@@ -2,8 +2,8 @@
 import { computed } from 'vue'
 import { clipPlanText } from '../checks'
 import { itemKindLabel, itemStamp, itemTitle, planUpdatedLabel, pointsLabel } from '../planItems'
-import IconButton from './IconButton.vue'
-import { icons } from './icons'
+import IconButton from '../../shared/components/IconButton.vue'
+import { icons } from '../../shared/icons.js'
 
 const props = defineProps({
   title: { type: String, default: '' },

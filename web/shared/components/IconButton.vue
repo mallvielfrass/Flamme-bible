@@ -1,5 +1,5 @@
 <script setup>
-import { icons } from './icons'
+import { icons } from '../icons.js'
 
 defineProps({
   icon: { type: String, required: true },
