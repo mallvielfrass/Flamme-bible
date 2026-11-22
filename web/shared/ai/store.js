@@ -1,6 +1,5 @@
-import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
-import { explain } from '../api'
+import { computed, reactive, ref } from 'vue'
+import { explain } from '../http.js'
 
 /**
  * @typedef {Object} AiChat
@@ -23,8 +22,17 @@ import { explain } from '../api'
  * @property {number} [completion_tokens]
  */
 
-export const useAiStore = defineStore('ai', () => {
-  /** @type {ReturnType<import('../aiApi.js').createAiApi> | null} */
+/** @type {ReturnType<typeof createAi> | null} */
+let singleton = null
+
+/** Общее состояние чата для сайта и настольного клиента. */
+export function useAiStore() {
+  if (!singleton) singleton = createAi()
+  return singleton
+}
+
+function createAi() {
+  /** @type {ReturnType<import('./aiApi.js').createAiApi> | null} */
   let client = null
   let pending = null
 
@@ -201,9 +209,9 @@ export const useAiStore = defineStore('ai', () => {
     pending?.abort()
   }
 
-  return {
+  return reactive({
     chats, messages, current, providers, tasks, modelId, query, streaming, activeId,
     error, chatOff, hasProvider,
     useApi, loadProviders, loadChats, open, create, patch, remove, pickModel, send, stop,
-  }
-})
+  })
+}

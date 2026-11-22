@@ -1,4 +1,4 @@
-import { ApiError } from './api'
+import { ApiError } from '../http.js'
 
 /**
  * @typedef {Object} AiEvent
@@ -67,6 +67,30 @@ export function createAiApi({ baseUrl = '', getAuth, fetch: doFetch } = {}) {
     },
     providers() {
       return request('/api/ai/providers')
+    },
+    createProvider(body) {
+      return request('/api/ai/providers', { method: 'POST', body })
+    },
+    patchProvider(id, body) {
+      return request(`/api/ai/providers/${id}`, { method: 'PATCH', body })
+    },
+    putProviderToken(id, body) {
+      return request(`/api/ai/providers/${id}/token`, { method: 'PUT', body })
+    },
+    deleteProvider(id) {
+      return request(`/api/ai/providers/${id}`, { method: 'DELETE' })
+    },
+    testProvider(id) {
+      return request(`/api/ai/providers/${id}/test`, { method: 'POST' })
+    },
+    remoteModels(id) {
+      return request(`/api/ai/providers/${id}/remote-models`)
+    },
+    putModels(id, body) {
+      return request(`/api/ai/providers/${id}/models`, { method: 'PUT', body })
+    },
+    putTasks(body) {
+      return request('/api/ai/tasks', { method: 'PUT', body })
     },
     /**
      * @param {string} id

@@ -1,5 +1,5 @@
 import MarkdownIt from 'markdown-it'
-import { splitEmoji } from './emoji'
+import { splitEmoji } from '../../src/emoji.js'
 
 const md = new MarkdownIt({
   html: false,

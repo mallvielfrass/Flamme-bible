@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { markdownTree } from './markdown'
+import { markdownTree } from '../shared/ai/markdown.js'
 
 function types(nodes) {
   return JSON.stringify(nodes)

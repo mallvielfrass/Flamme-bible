@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { loadTwemoji } from '../../emoji'
+import { loadTwemoji } from '../../src/emoji.js'
 import MdNode from './MdNode.vue'
 
 const props = defineProps({
