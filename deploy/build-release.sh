@@ -34,13 +34,16 @@ usage() {
   COMPOSE_DIR         каталог с docker-compose.yml
   COMPOSE_ENV_FILE    явный путь к .env для публикации
 
-Во время сборки пик на диске примерно 7–8 ГБ: образ 2,5–3,5 ГБ, один каталог
-target 2–3 ГБ, кэш Cargo/npm и Windows SDK 1,5–2 ГБ. После сборки target
-удаляется. Остаются образ и кэш (около 4–5 ГБ) и сами файлы программы
-(порядка 100 МБ). На машине с примерно 9 ГБ свободно это впритык.
+Скомпилированные библиотеки (каталог target для Linux и Windows) хранятся
+в томе кэша, поэтому повторная сборка пересобирает только саму программу.
+На диске это занимает около 9–12 ГБ: образ 2,5–3,5 ГБ, target 4–6 ГБ,
+кэш Cargo/npm и Windows SDK 1,5–2 ГБ.
+
+  KEEP_TARGET=0       не хранить target: около 4–5 ГБ, но каждая сборка
+                      компилирует всё заново
 
 Первая сборка на двух ядрах обычно занимает около часа, иногда до полутора.
-Повторные — примерно 15–30 минут, если том кэша уже заполнен.
+Повторные с сохранённым target — несколько минут.
 
 Если памяти мало, остановите контейнер модели (профиль semantic / embed)
 на время сборки и при необходимости добавьте файл подкачки на 2 ГБ.
@@ -152,8 +155,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "сборка клиента $version (цель — /out в контейнере)"
-# Том только для кэша зависимостей. Каталог target живёт внутри контейнера и
-# удаляется скриптом сборки, а сам контейнер снимается флагом --rm.
+# Том кэша хранит зависимости и каталог target (если KEEP_TARGET не 0).
 docker volume create "$cache_volume" >/dev/null
 docker rm -f flammebible-client-build >/dev/null 2>&1 || true
 docker run --rm \
@@ -162,7 +164,7 @@ docker run --rm \
 	--cpus="${BUILD_CPUS:-1}" \
 	-e CARGO_BUILD_JOBS="${BUILD_JOBS:-1}" \
 	-e CARGO_HOME=/cache/cargo \
-	-e CARGO_TARGET_DIR=/work/target \
+	-e KEEP_TARGET="${KEEP_TARGET:-1}" \
 	-e CARGO_INCREMENTAL=0 \
 	-e CARGO_PROFILE_RELEASE_DEBUG=0 \
 	-e CARGO_PROFILE_RELEASE_STRIP=symbols \
