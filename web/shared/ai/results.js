@@ -1,6 +1,15 @@
 /** Ключ provide: загрузка текста песни или стиха, если в пункте его нет. */
 export const aiResultKey = Symbol('aiResult')
 
+/**
+ * Ключ provide: куда добавить пункт ответа. Без него кнопки «В план» нет.
+ * @typedef {Object} AiPlanTarget
+ * @property {() => Promise<{ id: string, title: string }[]>} list
+ * @property {(planId: string, item: AiResult) => Promise<void>} add
+ * @property {(title: string, item: AiResult) => Promise<void>} create
+ */
+export const aiPlanKey = Symbol('aiPlan')
+
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
@@ -10,6 +19,10 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
  * @property {string} title
  * @property {string} note
  * @property {string} body
+ * @property {string} [module_short_name] только стих
+ * @property {number} [book] только стих
+ * @property {number} [chapter] только стих
+ * @property {number} [verse] только стих
  */
 
 /**
@@ -51,6 +64,10 @@ export function normalizeResult(raw) {
     title,
     note: text(raw.module_title || raw.module_short_name || raw.note),
     body: text(raw.text || raw.body),
+    module_short_name: text(raw.module_short_name),
+    book: Number(raw.book) || 0,
+    chapter: Number(raw.chapter) || 0,
+    verse: Number(raw.verse_start || raw.verse) || 0,
   }
 }
 

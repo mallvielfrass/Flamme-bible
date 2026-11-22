@@ -544,3 +544,24 @@
 .ai-hit-n { color: var(--muted); font-size: 0.85rem; }
 .ai-hit-body { padding: 0 0.85rem 0.7rem 1.7rem; }
 .ai-hit-text { margin: 0; white-space: pre-wrap; }
+
+.ai-hit summary .ai-hit-add { margin-left: auto; flex: none; }
+.ai-hit-done { margin: 0 0.85rem 0.5rem 1.7rem; color: var(--green, #1f7a45); }
+.ai-hits .icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+.ai-hits .icon-btn svg { width: 0.92rem; height: 0.92rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ai-hits .icon-btn.green { color: var(--green, #1f7a45); border-color: #b7d7c3; }
+.ai-plan-pick { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.5rem 0; }
+.ai-plan-opt { display: flex; align-items: center; gap: 0.5rem; margin: 0; }
+.ai-plan-title { margin-top: 0.3rem; }

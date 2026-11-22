@@ -13,7 +13,7 @@ describe('parseResults', () => {
     ]))
     expect(items).toEqual([
       { kind: 'song', id: '', title: 'Благодать', note: 'Гимны', body: 'Куплет' },
-      { kind: 'verse', id: 'Ин. 3:16', title: 'Ин. 3:16', note: '', body: '' },
+      { kind: 'verse', id: 'Ин. 3:16', title: 'Ин. 3:16', note: '', body: '', module_short_name: '', book: 0, chapter: 0, verse: 0 },
     ])
   })
 
