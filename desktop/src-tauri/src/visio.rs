@@ -388,11 +388,8 @@ pub fn parse_file(path: &Path) -> Result<Book, String> {
     parse(&data)
 }
 
-/// A grouped songbook is refused: rewriting it would drop the groups.
+/// Rewrites the song body and keeps the groups that belong to `book`.
 pub fn write(book: &Book, template: &[u8]) -> Result<Vec<u8>, String> {
-    if !book.groups.is_empty() {
-        return Err("сборник с группами не перезаписывается".into());
-    }
     if template.len() < HEADER_FIXED || &template[..16] != MAGIC {
         return Err("повреждённый шаблон".into());
     }
@@ -465,7 +462,20 @@ fn encode_body(book: &Book) -> Result<Vec<u8>, String> {
             write_u32(&mut buf, part.align);
         }
     }
-    write_u32(&mut buf, 0);
+    if book.groups.len() > MAX_COUNT as usize {
+        return Err("слишком много групп".into());
+    }
+    write_u32(&mut buf, book.groups.len() as u32);
+    for group in &book.groups {
+        write_text(&mut buf, &group.name)?;
+        if group.songs.len() > MAX_COUNT as usize {
+            return Err("слишком много песен".into());
+        }
+        write_u32(&mut buf, group.songs.len() as u32);
+        for index in &group.songs {
+            write_u32(&mut buf, *index);
+        }
+    }
     Ok(buf)
 }
 
@@ -525,16 +535,8 @@ pub fn replace_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
 }
 
 pub fn write_book_file(path: &Path, book: &Book) -> Result<(), String> {
-    if !book.groups.is_empty() {
-        return Err("сборник с группами не перезаписывается".into());
-    }
     let template = if path.is_file() {
-        let bytes = fs::read(path).map_err(|err| err.to_string())?;
-        let existing = parse(&bytes)?;
-        if !existing.groups.is_empty() {
-            return Err("сборник с группами не перезаписывается".into());
-        }
-        bytes
+        fs::read(path).map_err(|err| err.to_string())?
     } else {
         blank_template(&book.header.header_short, &book.header.header_title)?
     };
@@ -1407,21 +1409,7 @@ mod tests {
     }
 
     fn encode_body_groups(book: &Book) -> Vec<u8> {
-        let mut buf = encode_body(&Book {
-            groups: Vec::new(),
-            ..book.clone()
-        })
-        .unwrap();
-        buf.truncate(buf.len() - 4);
-        write_u32(&mut buf, book.groups.len() as u32);
-        for group in &book.groups {
-            write_text(&mut buf, &group.name).unwrap();
-            write_u32(&mut buf, group.songs.len() as u32);
-            for index in &group.songs {
-                write_u32(&mut buf, *index);
-            }
-        }
-        buf
+        encode_body(book).unwrap()
     }
 
     #[test]
@@ -1476,22 +1464,27 @@ mod tests {
     }
 
     #[test]
-    fn grouped_file_is_not_replaced() {
+    fn grouped_file_roundtrips_and_keeps_groups_when_a_song_changes() {
         let mut book = sample();
         book.groups = vec![Group {
             name: "группа".into(),
             songs: vec![0],
         }];
-        let raw = pack(&book, &[0, 0, 0, 0], &[0, 0, 0, 0]);
+        let raw = pack(&book, &[1, 2, 3, 4], &[9, 9, 9, 9]);
         let parsed = parse(&raw).unwrap();
-        assert_eq!(parsed.groups.len(), 1);
-        assert!(write(&parsed, &raw).is_err());
+        assert_eq!(parsed.groups, book.groups);
+        let again = parse(&write(&parsed, &raw).unwrap()).unwrap();
+        assert_eq!(again.groups, book.groups);
         let tmp = TmpDir::new("groups");
         let path = tmp.path.join("grouped.vbm");
-        fs::write(&path, &raw).unwrap();
-        assert!(write_book_file(&path, &parsed).is_err());
-        assert_eq!(fs::read(&path).unwrap(), raw);
-        assert!(!backup_path(&path).exists());
+        write_book_file(&path, &parsed).unwrap();
+        let mut edited = parsed.clone();
+        edited.songs[0].title = "другая".into();
+        write_book_file(&path, &edited).unwrap();
+        let read = parse_file(&path).unwrap();
+        assert_eq!(read.songs[0].title, "другая");
+        assert_eq!(read.groups[0].name, "группа");
+        assert_eq!(read.groups[0].songs, vec![0]);
     }
 
     #[test]
