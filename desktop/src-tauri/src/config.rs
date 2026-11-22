@@ -29,6 +29,18 @@ pub struct Config {
     /// Пусто или `utf-8` — как раньше. `windows-1251` — планы и PlanDef.ini.
     #[serde(default)]
     pub plan_encoding: String,
+    /// Пропущенные сборники и планы. Ключ — сервер и учётная запись.
+    #[serde(default)]
+    pub skipped: BTreeMap<String, SkippedSync>,
+}
+
+/// Сборники и планы, которые на этом компьютере решили не копировать.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkippedSync {
+    #[serde(default)]
+    pub songbooks: Vec<String>,
+    #[serde(default)]
+    pub plans: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -100,8 +112,54 @@ impl Default for Config {
             plans: BTreeMap::new(),
             pending_fbids: BTreeMap::new(),
             plan_encoding: String::new(),
+            skipped: BTreeMap::new(),
         }
     }
+}
+
+pub fn account_key(server_url: &str, user_id: &str) -> String {
+    format!("{server_url}\n{user_id}")
+}
+
+impl Config {
+    pub fn skipped_for(&self) -> SkippedSync {
+        self.skipped
+            .get(&account_key(&self.server_url, &self.user.user_id))
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
+/// `kind` — `songbook` или `plan`. Пустой id не записывается.
+pub fn set_skipped(cfg: &mut Config, kind: &str, id: &str, skip: bool) -> Result<(), String> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Err("Нет идентификатора".into());
+    }
+    if cfg.user.user_id.is_empty() {
+        return Err("Сначала войдите в учётную запись".into());
+    }
+    let books = match kind {
+        "songbook" => true,
+        "plan" => false,
+        _ => return Err("Неизвестный вид".into()),
+    };
+    let key = account_key(&cfg.server_url, &cfg.user.user_id);
+    let mut entry = cfg.skipped.remove(&key).unwrap_or_default();
+    let list = if books {
+        &mut entry.songbooks
+    } else {
+        &mut entry.plans
+    };
+    list.retain(|item| item != id);
+    if skip {
+        list.push(id.to_string());
+    }
+    list.sort();
+    if !entry.songbooks.is_empty() || !entry.plans.is_empty() {
+        cfg.skipped.insert(key, entry);
+    }
+    Ok(())
 }
 
 impl Config {
@@ -247,5 +305,37 @@ mod tests {
         assert!(cfg.songbooks["a.vbm"].songs.is_empty());
         apply_server_url(&mut cfg, "https://example.com/").unwrap();
         assert_eq!(cfg.server_url, "https://example.com");
+    }
+
+    #[test]
+    fn skips_belong_to_one_server_and_account() {
+        let tmp = TmpDir::new("skips");
+        let mut cfg = Config {
+            server_url: "https://example.com".into(),
+            user: UserProfile {
+                user_id: "user-a".into(),
+                ..UserProfile::default()
+            },
+            ..Config::default()
+        };
+        set_skipped(&mut cfg, "songbook", "book-1", true).unwrap();
+        set_skipped(&mut cfg, "plan", "plan-1", true).unwrap();
+        set_skipped(&mut cfg, "songbook", "book-1", true).unwrap();
+        assert_eq!(cfg.skipped_for().songbooks, vec!["book-1".to_string()]);
+        assert_eq!(cfg.skipped_for().plans, vec!["plan-1".to_string()]);
+        save(&tmp.path, &cfg).unwrap();
+        let loaded = load(&tmp.path).unwrap();
+        assert_eq!(loaded.skipped_for().songbooks, vec!["book-1".to_string()]);
+
+        cfg.user.user_id = "user-b".into();
+        assert!(cfg.skipped_for().songbooks.is_empty());
+        cfg.user.user_id = "user-a".into();
+        cfg.server_url = "http://localhost:8080".into();
+        assert!(cfg.skipped_for().plans.is_empty());
+        cfg.server_url = "https://example.com".into();
+        set_skipped(&mut cfg, "plan", "plan-1", false).unwrap();
+        set_skipped(&mut cfg, "songbook", "book-1", false).unwrap();
+        assert!(cfg.skipped.is_empty());
+        assert!(set_skipped(&mut cfg, "other", "book-1", true).is_err());
     }
 }

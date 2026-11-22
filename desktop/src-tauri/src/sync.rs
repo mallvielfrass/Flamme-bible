@@ -109,6 +109,8 @@ pub struct Input {
     pub remote_plans: Vec<crate::plans::RemotePlan>,
     pub modules_dir: String,
     pub plans_dir: String,
+    pub skip_songbooks: BTreeSet<String>,
+    pub skip_plans: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -122,6 +124,8 @@ pub struct SongRow {
     pub local_lyrics: String,
     pub remote_title: String,
     pub remote_lyrics: String,
+    pub server_id: String,
+    pub absent: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -133,6 +137,21 @@ pub struct PlanRow {
     pub summary: String,
     pub local_summary: String,
     pub remote_summary: String,
+    pub server_id: String,
+    pub absent: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct GroupedBook {
+    pub title: String,
+    pub note: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SkippedRow {
+    pub kind: String,
+    pub id: String,
+    pub title: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -140,6 +159,8 @@ pub struct Preview {
     pub songs: Vec<SongRow>,
     pub plans: Vec<PlanRow>,
     pub warnings: Vec<String>,
+    pub grouped: Vec<GroupedBook>,
+    pub skipped: Vec<SkippedRow>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -206,9 +227,14 @@ struct Analysis {
     songs: Vec<SongRow>,
     plans: Vec<PlanRow>,
     warnings: Vec<String>,
+    grouped: Vec<GroupedBook>,
+    skipped: Vec<SkippedRow>,
     books: Vec<BookWork>,
     plan_work: Vec<PlanWork>,
 }
+
+const GROUPED_NOTE: &str =
+    "Группы в .vbm, пока не перезаписывается. Позже свяжем их с разделами сервера.";
 
 struct SongFact {
     id: String,
@@ -225,6 +251,8 @@ pub fn preview(input: &Input) -> Result<Preview, String> {
         songs: analysis.songs,
         plans: analysis.plans,
         warnings: analysis.warnings,
+        grouped: analysis.grouped,
+        skipped: analysis.skipped,
     })
 }
 
@@ -249,35 +277,48 @@ fn analyze(
     require: bool,
     ids: &mut impl FnMut() -> String,
 ) -> Result<Analysis, String> {
-    let mut warnings = Vec::new();
+    let warnings = Vec::new();
     let mut rows = Vec::new();
+    let mut grouped = Vec::new();
+    let mut skipped = Vec::new();
     let mut book_work = Vec::new();
     let mut used_remote = BTreeSet::new();
     for book in &input.books {
         if book.has_groups {
-            warnings.push(format!(
-                "Сборник «{}» содержит группы и пропущен: его нельзя безопасно перезаписать.",
-                book.title
-            ));
+            grouped.push(GroupedBook {
+                title: display_title(&book.title, "Сборник"),
+                note: GROUPED_NOTE.into(),
+            });
             continue;
         }
         let remote = match_book(book, &input.remote_books, &mut used_remote);
         let facts = song_facts(book, remote)?;
         for fact in &facts {
-            rows.push(song_row(book, fact));
+            rows.push(song_row(book, fact, false));
         }
         if require {
             book_work.push(book_work_from(book, remote, &facts, song_choices, ids)?);
         }
     }
     for remote in &input.remote_books {
-        if used_remote.contains(&remote.server_id) || input.modules_dir.is_empty() {
+        if used_remote.contains(&remote.server_id) {
+            continue;
+        }
+        if input.skip_songbooks.contains(&remote.server_id) {
+            skipped.push(SkippedRow {
+                kind: "songbook".into(),
+                id: remote.server_id.clone(),
+                title: display_title(&remote.title, "Сборник"),
+            });
+            continue;
+        }
+        if input.modules_dir.is_empty() {
             continue;
         }
         let book = remote_as_local(remote, &input.modules_dir);
         let facts = song_facts(&book, Some(remote))?;
         for fact in &facts {
-            rows.push(song_row(&book, fact));
+            rows.push(song_row(&book, fact, true));
         }
         if require {
             book_work.push(book_work_from(
@@ -295,18 +336,29 @@ fn analyze(
     for plan in &input.plans {
         let remote = match_plan(plan, &input.remote_plans, &mut used_plans);
         let action = plan_action(plan, remote);
-        plan_rows.push(plan_row(plan, remote, action));
+        plan_rows.push(plan_row(plan, remote, action, false));
         if require {
             plan_work.push(plan_work_from(plan, remote, action, plan_choices)?);
         }
     }
     for remote in &input.remote_plans {
-        if used_plans.contains(&remote.id) || remote.deleted || input.plans_dir.is_empty() {
+        if used_plans.contains(&remote.id) || remote.deleted {
+            continue;
+        }
+        if input.skip_plans.contains(&remote.id) {
+            skipped.push(SkippedRow {
+                kind: "plan".into(),
+                id: remote.id.clone(),
+                title: display_title(&remote.title, "План"),
+            });
+            continue;
+        }
+        if input.plans_dir.is_empty() {
             continue;
         }
         let plan = remote_as_plan(remote, &input.plans_dir);
         let action = plan_action(&plan, Some(remote));
-        plan_rows.push(plan_row(&plan, Some(remote), action));
+        plan_rows.push(plan_row(&plan, Some(remote), action, true));
         if require {
             plan_work.push(plan_work_from(&plan, Some(remote), action, plan_choices)?);
         }
@@ -315,9 +367,19 @@ fn analyze(
         songs: rows,
         plans: plan_rows,
         warnings,
+        grouped,
+        skipped,
         books: book_work,
         plan_work,
     })
+}
+
+fn display_title(title: &str, fallback: &str) -> String {
+    if title.is_empty() {
+        fallback.into()
+    } else {
+        title.into()
+    }
 }
 
 fn song_facts(book: &BookIn, remote: Option<&RemoteBook>) -> Result<Vec<SongFact>, String> {
@@ -372,7 +434,7 @@ fn index_songs(songs: &[Song]) -> Result<std::collections::BTreeMap<String, Song
     Ok(map)
 }
 
-fn song_row(book: &BookIn, fact: &SongFact) -> SongRow {
+fn song_row(book: &BookIn, fact: &SongFact, absent: bool) -> SongRow {
     let title = fact
         .local
         .as_ref()
@@ -399,6 +461,8 @@ fn song_row(book: &BookIn, fact: &SongFact) -> SongRow {
             .map(|song| song.title.clone())
             .unwrap_or_default(),
         remote_lyrics: fact.remote.as_ref().map(visio::lyrics).unwrap_or_default(),
+        server_id: book.server_id.clone(),
+        absent,
     }
 }
 
@@ -675,7 +739,16 @@ fn plan_action(plan: &PlanIn, remote: Option<&crate::plans::RemotePlan>) -> &'st
     }
 }
 
-fn plan_row(plan: &PlanIn, remote: Option<&crate::plans::RemotePlan>, action: &str) -> PlanRow {
+fn plan_row(
+    plan: &PlanIn,
+    remote: Option<&crate::plans::RemotePlan>,
+    action: &str,
+    absent: bool,
+) -> PlanRow {
+    let server_id = remote
+        .map(|plan| plan.id.clone())
+        .filter(|id| !id.is_empty())
+        .unwrap_or_else(|| plan.server_id.clone());
     PlanRow {
         key: plan.key.clone(),
         path: plan.path.clone(),
@@ -692,6 +765,8 @@ fn plan_row(plan: &PlanIn, remote: Option<&crate::plans::RemotePlan>, action: &s
         remote_summary: remote
             .map(|plan| plans::summarize(&plan.items))
             .unwrap_or_else(|| "на сервере плана нет".into()),
+        server_id,
+        absent,
     }
 }
 
@@ -899,6 +974,8 @@ mod tests {
             remote_plans: Vec::new(),
             modules_dir: "/modules".into(),
             plans_dir: "/plans".into(),
+            skip_songbooks: BTreeSet::new(),
+            skip_plans: BTreeSet::new(),
         };
         let preview = preview(&input).unwrap();
         let action = |id: &str| {
@@ -928,6 +1005,8 @@ mod tests {
             remote_plans: Vec::new(),
             modules_dir: String::new(),
             plans_dir: String::new(),
+            skip_songbooks: BTreeSet::new(),
+            skip_plans: BTreeSet::new(),
         };
         let err = apply(&input, &[], &[], String::new).unwrap_err();
         assert!(err.contains("выбрать"));
@@ -1012,6 +1091,8 @@ mod tests {
             remote_plans: Vec::new(),
             modules_dir: String::new(),
             plans_dir: String::new(),
+            skip_songbooks: BTreeSet::new(),
+            skip_plans: BTreeSet::new(),
         };
         let shown = preview(&input).unwrap();
         assert_eq!(shown.songs[0].action, "conflict");
@@ -1043,6 +1124,8 @@ mod tests {
             remote_plans: Vec::new(),
             modules_dir: String::new(),
             plans_dir: String::new(),
+            skip_songbooks: BTreeSet::new(),
+            skip_plans: BTreeSet::new(),
         }
     }
 
@@ -1108,6 +1191,8 @@ mod tests {
             remote_plans: Vec::new(),
             modules_dir: String::new(),
             plans_dir: String::new(),
+            skip_songbooks: BTreeSet::new(),
+            skip_plans: BTreeSet::new(),
         };
         let outcome = apply(&input, &[], &[], String::new).unwrap();
         let ids = |songs: &[Song]| {
@@ -1142,6 +1227,8 @@ mod tests {
             remote_plans: Vec::new(),
             modules_dir: "/modules".into(),
             plans_dir: String::new(),
+            skip_songbooks: BTreeSet::new(),
+            skip_plans: BTreeSet::new(),
         };
         let outcome = apply(&input, &[], &[], String::new).unwrap();
         let ids: Vec<_> = outcome.books[0]
@@ -1167,6 +1254,8 @@ mod tests {
             remote_plans: Vec::new(),
             modules_dir: String::new(),
             plans_dir: String::new(),
+            skip_songbooks: BTreeSet::new(),
+            skip_plans: BTreeSet::new(),
         };
         let outcome = apply(&input, &[], &[], String::new).unwrap();
         let ids: Vec<_> = outcome.books[0]
@@ -1175,6 +1264,66 @@ mod tests {
             .map(|song| song.fbid.as_str())
             .collect();
         assert_eq!(ids, vec![B, A]);
+    }
+
+    #[test]
+    fn grouped_book_is_listed_and_not_written() {
+        let mut grouped = book(vec![song(A, "А", "текст")], vec![]);
+        grouped.has_groups = true;
+        grouped.title = "Детские песни".into();
+        let input = Input {
+            books: vec![grouped],
+            ..empty_input()
+        };
+        let shown = preview(&input).unwrap();
+        assert!(shown.songs.is_empty());
+        assert!(shown.warnings.is_empty());
+        assert_eq!(shown.grouped.len(), 1);
+        assert_eq!(shown.grouped[0].title, "Детские песни");
+        assert!(shown.grouped[0].note.contains("Группы"));
+        let outcome = apply(&input, &[], &[], String::new).unwrap();
+        assert!(outcome.books.is_empty());
+    }
+
+    #[test]
+    fn absent_book_and_plan_can_be_skipped_without_a_write() {
+        let mut remote_book = remote(vec![song(A, "А", "текст")]);
+        remote_book.server_id = "remote-book".into();
+        let remote_plan = crate::plans::RemotePlan {
+            id: "remote-plan".into(),
+            title: "Воскресенье".into(),
+            version: 1,
+            items: vec![PlanItem {
+                kind: "text".into(),
+                caption: "Мир".into(),
+                ..PlanItem::default()
+            }],
+            ..Default::default()
+        };
+        let mut input = Input {
+            remote_books: vec![remote_book],
+            remote_plans: vec![remote_plan],
+            modules_dir: "/modules".into(),
+            plans_dir: "/plans".into(),
+            ..empty_input()
+        };
+        let shown = preview(&input).unwrap();
+        assert!(shown.songs.iter().all(|row| row.absent));
+        assert_eq!(shown.songs[0].server_id, "remote-book");
+        assert_eq!(shown.songs[0].action, "pull_add");
+        assert!(shown.plans[0].absent);
+        assert_eq!(shown.plans[0].server_id, "remote-plan");
+        assert!(apply(&input, &[], &[], String::new).unwrap().books[0].write);
+
+        input.skip_songbooks.insert("remote-book".into());
+        input.skip_plans.insert("remote-plan".into());
+        let shown = preview(&input).unwrap();
+        assert!(shown.songs.is_empty());
+        assert!(shown.plans.is_empty());
+        assert_eq!(shown.skipped.len(), 2);
+        let outcome = apply(&input, &[], &[], String::new).unwrap();
+        assert!(outcome.books.is_empty());
+        assert!(outcome.plans.is_empty());
     }
 
     #[test]

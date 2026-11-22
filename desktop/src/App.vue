@@ -9,7 +9,7 @@ import SettingsModal, { type SettingsDraft } from "./components/SettingsModal.vu
 import SyncView from "./components/SyncView.vue";
 import UpdatesView from "./components/UpdatesView.vue";
 import { api, type Dimension, type PlanItem, type Preview, type Progress, type Scan, type Settings, type SongHit, type SongRow, type UpdateView } from "./commands";
-import { canStart, conflictRows, decisionsFrom, hasUnsyncedChanges, planKey, songKey, type Choice } from "./syncState";
+import { adoptionKey, decisionsFrom, hasUnsyncedChanges, planKey, songKey, syncReady, type Choice } from "./syncState";
 
 const tab = ref<"sync" | "plans" | "updates">("sync");
 const ready = ref(false);
@@ -37,6 +37,7 @@ const settingsError = ref("");
 const busy = ref("");
 const settingsBusy = ref(false);
 const chosen = ref<Record<string, Choice>>({});
+const adopted = ref<Record<string, true>>({});
 const conflict = ref<SongRow | null>(null);
 const hits = ref<SongHit[]>([]);
 const updateInfo = ref<UpdateView | null>(null);
@@ -44,7 +45,12 @@ const updateError = ref("");
 const updateBusy = ref(false);
 const savedPath = ref("");
 
-const chosenRows = computed(() => conflictRows(preview.value?.songs ?? [], preview.value?.plans ?? []));
+const spaceName = computed(() => {
+  const found = dimensions.value.find((space) => space.id === settings.value.dimension_id);
+  if (!found) return "";
+  return found.name || (found.kind === "personal" ? "Личное" : "Община");
+});
+const folderPath = computed(() => scan.value?.modules_dir || scan.value?.root || "");
 
 function note(line: string) {
   log.value = [...log.value, line];
@@ -69,6 +75,7 @@ async function boot() {
     }
     if (settings.value.logged_in) {
       dimensions.value = await api.dimensions();
+      if (scan.value && !scan.value.needs_choice) await loadPreview(false);
     }
   } catch (err) {
     const text = message(err);
@@ -90,6 +97,7 @@ async function enter(mode: "login" | "register", serverUrl: string, email: strin
     tab.value = "sync";
     dimensions.value = await api.dimensions();
     note(mode === "register" ? "Учётная запись создана." : "Вход выполнен.");
+    if (scan.value && !scan.value.needs_choice) await loadPreview(true);
   } catch (err) {
     const text = message(err);
     if (settings.value.logged_in) error.value = text;
@@ -102,6 +110,10 @@ async function enter(mode: "login" | "register", serverUrl: string, email: strin
 async function saveSettings(draft: SettingsDraft) {
   settingsBusy.value = true;
   settingsError.value = "";
+  const changed =
+    draft.path !== settings.value.visio_path ||
+    Boolean(draft.dimensionId && draft.dimensionId !== settings.value.dimension_id) ||
+    draft.serverUrl !== settings.value.server_url;
   try {
     if (draft.windows1251 !== settings.value.plan_windows1251) {
       settings.value = await api.setPlanEncoding(draft.windows1251);
@@ -126,6 +138,9 @@ async function saveSettings(draft: SettingsDraft) {
       }
     }
     if (!scan.value?.needs_choice) settingsOpen.value = false;
+    if (settings.value.logged_in && scan.value && !scan.value.needs_choice && (changed || !preview.value)) {
+      await loadPreview(changed);
+    }
   } catch (err) {
     settingsError.value = message(err);
   } finally {
@@ -148,18 +163,38 @@ async function logout() {
   }
 }
 
-async function refresh() {
+async function loadPreview(reset: boolean) {
   busy.value = "preview";
   error.value = "";
   try {
     preview.value = await api.preview();
-    chosen.value = {};
-    note("Список изменений готов.");
+    if (reset) {
+      chosen.value = {};
+      adopted.value = {};
+    }
   } catch (err) {
     error.value = message(err);
   } finally {
     busy.value = "";
   }
+}
+
+function refresh() {
+  return loadPreview(true);
+}
+
+async function rememberSkip(kind: "songbook" | "plan", id: string, skip: boolean) {
+  error.value = "";
+  try {
+    await api.setSkipped(kind, id, skip);
+    await loadPreview(false);
+  } catch (err) {
+    error.value = message(err);
+  }
+}
+
+function adopt(kind: "songbook" | "plan", id: string) {
+  adopted.value = { ...adopted.value, [adoptionKey(kind, id)]: true };
 }
 
 function onPlanChoice(key: string, choice: "keep_local" | "take_server" | "keep_both") {
@@ -171,15 +206,18 @@ function remember(key: string, choice: Choice) {
 }
 
 async function start() {
-  if (!preview.value || !canStart(chosenRows.value, chosen.value)) return;
+  if (busy.value || !preview.value || !syncReady(preview.value, chosen.value, adopted.value)) return;
   busy.value = "sync";
   error.value = "";
+  progress.value = null;
   const payload = decisionsFrom(chosen.value, preview.value.songs, preview.value.plans);
   try {
     const report = await api.start(payload.songs, payload.plans);
     for (const line of report.notes) note(line);
     if (report.backups.length) note("Копии .bak сохранены рядом с изменёнными файлами.");
     if (settings.value.visio_path) scan.value = await api.openVisio(settings.value.visio_path);
+    chosen.value = {};
+    adopted.value = {};
     preview.value = await api.preview();
   } catch (err) {
     error.value = message(err);
@@ -274,6 +312,7 @@ function goSync() {
   closeAsk.value = false;
   settingsOpen.value = false;
   tab.value = "sync";
+  if (syncReady(preview.value, chosen.value, adopted.value)) void start();
 }
 
 async function closeAnyway() {
@@ -335,13 +374,17 @@ onMounted(() => {
         :log="log"
         :error="error"
         :busy="busy"
-        :conflict="conflict"
         :chosen="chosen"
+        :adopted="adopted"
+        :folder="folderPath"
+        :space="spaceName"
         @refresh="refresh"
         @start="start"
         @open-conflict="conflict = $event"
         @resolve-plan="onPlanChoice"
-        @repair="repairEncoding"
+        @adopt="adopt"
+        @skip="(kind, id) => rememberSkip(kind, id, true)"
+        @restore="(kind, id) => rememberSkip(kind, id, false)"
       />
       <PlansView v-else-if="tab === 'plans'" :scan="scan" :hits="hits" @create="createPlan" @search="search" @repair="repairEncoding" />
       <UpdatesView v-else :info="updateInfo" :error="updateError" :busy="updateBusy" :saved-path="savedPath" @check="checkUpdate" @download="downloadUpdate" />

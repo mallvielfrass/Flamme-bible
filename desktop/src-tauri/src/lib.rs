@@ -220,7 +220,7 @@ async fn start_sync(app: tauri::AppHandle, request: StartRequest) -> Result<Sync
     let writes_local =
         outcome.books.iter().any(|book| book.write) || outcome.plans.iter().any(|plan| plan.write);
     if writes_local {
-        ensure_visiobible_closed()?;
+        refuse_if_visiobible_open(&app, &outcome)?;
     }
     let mut notes = outcome.warnings.clone();
     let client = Remote::new(&cfg.server_url, &cfg.token)?;
@@ -289,8 +289,8 @@ async fn start_sync(app: tauri::AppHandle, request: StartRequest) -> Result<Sync
             completed += 1;
         }
         if book.write {
-            ensure_visiobible_closed()?;
             emit_step(&app, &steps, step_index, completed, total);
+            ensure_visiobible_closed()?;
             step_index += 1;
             let existed = Path::new(&book.path).is_file();
             visio::write_book_file(Path::new(&book.path), &book_from(book))?;
@@ -358,8 +358,8 @@ async fn start_sync(app: tauri::AppHandle, request: StartRequest) -> Result<Sync
             completed += 1;
         }
         if plan.write {
-            ensure_visiobible_closed()?;
             emit_step(&app, &steps, step_index, completed, total);
+            ensure_visiobible_closed()?;
             step_index += 1;
             let path = Path::new(&plan.path);
             let existed = path.is_file();
@@ -415,6 +415,39 @@ fn ensure_visiobible_closed() -> Result<(), String> {
     if running::visiobible_running() {
         return Err(running::CLOSE_MESSAGE.to_string());
     }
+    Ok(())
+}
+
+fn refuse_if_visiobible_open(
+    app: &tauri::AppHandle,
+    outcome: &sync::Outcome,
+) -> Result<(), String> {
+    if !running::visiobible_running() {
+        return Ok(());
+    }
+    let current = outcome
+        .books
+        .iter()
+        .find(|book| book.write)
+        .map(|book| book.title.clone())
+        .or_else(|| {
+            outcome
+                .plans
+                .iter()
+                .find(|plan| plan.write)
+                .map(|plan| plan.title.clone())
+        })
+        .unwrap_or_default();
+    emit(app, "Запись на компьютер", &current, 0, 1);
+    Err(running::CLOSE_MESSAGE.to_string())
+}
+
+#[tauri::command]
+fn set_skipped(kind: String, id: String, skip: bool) -> Result<(), String> {
+    let (dir, mut cfg) = load_config()?;
+    require_login(&cfg)?;
+    config::set_skipped(&mut cfg, &kind, &id, skip)?;
+    config::save(&dir, &cfg)?;
     Ok(())
 }
 
@@ -598,6 +631,7 @@ async fn gather() -> Result<(std::path::PathBuf, config::Config, Gathered), Stri
             updated_at: bind.map(|bind| bind.updated_at.clone()).unwrap_or_default(),
         });
     }
+    let skipped = cfg.skipped_for();
     let input = Input {
         books,
         plans: local_plans,
@@ -605,6 +639,8 @@ async fn gather() -> Result<(std::path::PathBuf, config::Config, Gathered), Stri
         remote_plans,
         modules_dir: scan.modules_dir,
         plans_dir: scan.plans_dir,
+        skip_songbooks: skipped.songbooks.into_iter().collect(),
+        skip_plans: skipped.plans.into_iter().collect(),
     };
     Ok((dir, cfg, Gathered(input, cursor, plan_warning)))
 }
@@ -821,6 +857,7 @@ pub fn run() {
             open_visio,
             preview_sync,
             start_sync,
+            set_skipped,
             create_plan,
             set_plan_encoding,
             repair_plan_encoding,
