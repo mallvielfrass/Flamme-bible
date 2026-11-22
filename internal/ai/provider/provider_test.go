@@ -71,3 +71,19 @@ func TestListModelsErrorScrub(t *testing.T) {
 		t.Fatalf("ошибка %s", err.Error())
 	}
 }
+
+func TestListModelsHTMLError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, "<!doctype html><html><title>Example Domain</title></html>")
+	}))
+	defer srv.Close()
+	_, err := (&Client{BaseURL: srv.URL + "/v1", Token: "sk-test-token-1234", HTTP: srv.Client()}).ListModels(context.Background())
+	if err == nil || strings.Contains(err.Error(), "<html") || strings.Contains(err.Error(), "doctype") {
+		t.Fatalf("html в ошибке: %v", err)
+	}
+	if !strings.Contains(err.Error(), "404") {
+		t.Fatalf("нет кода: %v", err)
+	}
+}

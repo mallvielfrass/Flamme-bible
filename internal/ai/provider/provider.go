@@ -47,7 +47,7 @@ func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 		return nil, errors.New(secret.Scrub(err.Error(), c.Token))
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, errors.New(secret.Scrub("провайдер "+res.Status+" "+string(raw), c.Token))
+		return nil, errors.New(secret.Scrub("провайдер "+errorText(res.Status, string(raw)), c.Token))
 	}
 	var body struct {
 		Data []struct {
@@ -71,4 +71,15 @@ func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 		out = append(out, id)
 	}
 	return out, nil
+}
+
+// errorText оставляет код ответа. HTML-страницу в текст ошибки не кладём:
+// иначе пользователь видит разметку чужого сайта.
+func errorText(status, body string) string {
+	body = strings.TrimSpace(body)
+	lower := strings.ToLower(body)
+	if strings.HasPrefix(lower, "<!doctype") || strings.HasPrefix(lower, "<html") || strings.Contains(lower, "<html") {
+		body = ""
+	}
+	return strings.TrimSpace(status + " " + body)
 }

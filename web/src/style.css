@@ -956,6 +956,7 @@ details.menu {
   padding-top: 0.7rem;
   border-top: 1px solid var(--line);
 }
+.ai-model > .btn { width: auto; justify-self: start; }
 .ai-checks { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; }
 .ai-remote { max-height: 12rem; overflow: auto; margin: 0.3rem 0; }
 .inline-check {
