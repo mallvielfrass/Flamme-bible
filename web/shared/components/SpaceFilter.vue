@@ -18,7 +18,7 @@ const active = ref(0)
 
 const selected = computed(() => props.communities.find((item) => item.id === props.modelValue) || null)
 const communityOn = computed(() => props.modelValue === 'community' || Boolean(selected.value))
-const label = computed(() => (selected.value ? `Общинные · ${selected.value.name || 'Община'}` : 'Общинные'))
+const label = computed(() => (selected.value ? (selected.value.name || 'Община') : 'Общинные'))
 const tip = computed(() => {
   if (!props.communities.length) return 'Вы пока не состоите в общине'
   return selected.value ? (selected.value.name || 'Община') : 'Общинные'
@@ -115,11 +115,10 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDoc))
       :class="{ on: modelValue === 'personal' }"
       @click="emitValue('personal')"
     >Личные</button>
-    <div ref="root" class="split-tab">
+    <div ref="root" class="split-tab" :class="{ on: communityOn, lone: !communities.length }">
       <button
         type="button"
-        class="tab split-main"
-        :class="{ on: communityOn, lone: !communities.length }"
+        class="split-label"
         :title="tip"
         @click="pickCommunity"
       >
@@ -128,8 +127,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDoc))
       <button
         v-if="communities.length"
         type="button"
-        class="tab split-caret"
-        :class="{ on: communityOn }"
+        class="split-caret"
         aria-label="Выбрать общину"
         aria-haspopup="listbox"
         :aria-expanded="menu"

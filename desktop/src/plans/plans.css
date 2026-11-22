@@ -1,11 +1,15 @@
 .plans-page {
   --green: #1f7a45;
   margin-top: 1rem;
-  font-family: var(--serif, Georgia, serif);
 }
 
 .plans-page h1,
-.plans-page h2,
+.plans-page h2 {
+  font-family: inherit;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
 .plans-page .title-serif,
 .plans-page .quote {
   font-family: var(--serif, Georgia, serif);
@@ -67,10 +71,33 @@
 
 .plans-page .space-filter { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.2rem 0 1rem; align-items: center; }
 .plans-page .space-label { display: inline-block; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.plans-page .split-tab { position: relative; display: inline-flex; }
-.plans-page .split-main { border-radius: 999px 0 0 999px; }
-.plans-page .split-caret { border-radius: 0 999px 999px 0; border-left: 0; padding-left: 0.45rem; padding-right: 0.55rem; }
-.plans-page .split-main.lone { border-radius: 999px; }
+.plans-page .split-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+}
+.plans-page .split-tab.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+.plans-page .split-tab .split-label,
+.plans-page .split-tab .split-caret {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  border-radius: 0;
+  min-height: 0;
+  padding: 0.35rem 0.8rem;
+  font-family: var(--sans, system-ui, sans-serif);
+}
+.plans-page .split-tab .split-caret {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.7rem 0 0.55rem;
+  border-left: 1px solid var(--line);
+}
+.plans-page .split-tab.on .split-caret { border-left-color: #fff; }
 
 .plans-page .tab {
   min-height: 0;
