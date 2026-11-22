@@ -11,6 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"flammebible/internal/ai/netguard"
+	"flammebible/internal/ai/secret"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -33,6 +36,8 @@ var (
 	errRequest      = errors.New("запрос")
 	errUnmappable   = errors.New("windows-1251")
 	errSemanticOff  = errors.New("смысловой поиск недоступен")
+	errAIDisabled   = errors.New("ИИ не настроен")
+	errAIName       = errors.New("имя")
 )
 
 type Server struct {
@@ -53,6 +58,9 @@ type Server struct {
 	embedMeasured float64
 	embedSamples  int
 	embedBucket   tokenBucket
+	aiKey         []byte
+	aiHTTP        *http.Client
+	aiResolve     netguard.Resolver
 }
 
 type principal struct {
@@ -62,11 +70,16 @@ type principal struct {
 }
 
 func New(db *pgxpool.Pool) *Server {
-	return &Server{
+	s := &Server{
 		db:         db,
 		sessionTTL: defaultSessionTTL,
 		authLimit:  newAuthLimiter(),
+		aiHTTP:     netguard.SafeClient(),
 	}
+	if key, err := secret.LoadKey(); err == nil {
+		s.aiKey = key
+	}
+	return s
 }
 
 func (s *Server) SetSessionTTL(d time.Duration) {
@@ -224,6 +237,10 @@ func writeMapped(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusBadRequest, errJSON("запрос"))
 	case errors.Is(err, errSemanticOff):
 		writeJSON(w, http.StatusServiceUnavailable, errJSON("смысловой поиск недоступен"))
+	case errors.Is(err, errAIDisabled):
+		writeJSON(w, http.StatusServiceUnavailable, errJSON("ИИ не настроен"))
+	case errors.Is(err, errAIName):
+		writeJSON(w, http.StatusConflict, errJSON("имя"))
 	case errors.Is(err, errUnmappable):
 		writeJSON(w, http.StatusBadRequest, errJSON("в тексте есть символы, которых нет в windows-1251"))
 	default:

@@ -1,11 +1,13 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from './stores/session'
+import AiSettingsModal from './components/AiSettingsModal.vue'
 
 const session = useSessionStore()
 const route = useRoute()
 const router = useRouter()
+const aiOpen = ref(false)
 
 const authScreen = computed(() => route.path === '/login' || route.path === '/register')
 const songsTo = computed(() => (session.token ? '/songbooks' : '/catalog'))
@@ -46,6 +48,7 @@ async function logout() {
         <span v-if="pendingAdmin" class="nav-badge">{{ pendingAdmin }}</span>
       </router-link>
       <div class="nav-end">
+        <button v-if="session.token" class="btn slim" type="button" @click="aiOpen = true">Настройки ИИ</button>
         <button v-if="session.token" class="logout" type="button" @click="logout">Выход</button>
         <template v-else>
           <router-link class="btn slim" to="/login">Войти</router-link>
@@ -57,4 +60,5 @@ async function logout() {
   <main :class="{ 'auth-main': authScreen }">
     <router-view />
   </main>
+  <AiSettingsModal v-if="aiOpen" @close="aiOpen = false" />
 </template>

@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, useId, ref } from 'vue'
 
 defineProps({
   title: { type: String, default: '' },
+  wide: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close'])
@@ -54,6 +55,7 @@ onBeforeUnmount(() => {
     <div
       ref="root"
       class="modal"
+      :class="{ wide }"
       role="dialog"
       aria-modal="true"
       :aria-labelledby="titleId"

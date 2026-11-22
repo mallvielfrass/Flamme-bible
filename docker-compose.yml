@@ -26,6 +26,7 @@ services:
       MEDIA_DIR: /data/media
       RELEASES_DIR: /data/releases
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      AI_SECRET_KEY: ${AI_SECRET_KEY:-}
       TRUST_PROXY: "1"
       # Пусто — смысловой поиск выключен. Включение: EMBED_URL и профиль semantic.
       EMBED_URL: ${EMBED_URL:-}

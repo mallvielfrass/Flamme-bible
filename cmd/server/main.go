@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"flammebible/internal/ai/secret"
 	"flammebible/internal/server"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -46,6 +48,12 @@ func main() {
 		}
 	}
 	api := server.New(pool)
+	if _, err := secret.LoadKey(); err != nil {
+		if !errors.Is(err, secret.ErrDisabled) {
+			log.Fatal(err)
+		}
+		log.Printf("ИИ выключен")
+	}
 	if raw := os.Getenv("SESSION_TTL"); raw != "" {
 		ttl, err := time.ParseDuration(raw)
 		if err != nil || ttl < time.Minute {
