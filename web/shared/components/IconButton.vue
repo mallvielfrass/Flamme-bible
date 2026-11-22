@@ -1,5 +1,6 @@
 <script setup>
 import { icons } from '../icons.js'
+import { vTip } from '../tip.js'
 
 defineProps({
   icon: { type: String, required: true },
@@ -19,7 +20,7 @@ defineProps({
     :class="[tone, { round, small, dirty }]"
     type="button"
     :aria-label="label"
-    :data-tip="label"
+    v-tip="label"
     :disabled="disabled || busy"
   >
     <span v-if="busy" class="spin" aria-hidden="true"></span>

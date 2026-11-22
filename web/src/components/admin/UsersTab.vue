@@ -7,6 +7,7 @@ import { useSessionStore } from '../../stores/session'
 import ConfirmDialog from '../../../shared/components/ConfirmDialog.vue'
 import DataTable from '../DataTable.vue'
 import IconButton from '../../../shared/components/IconButton.vue'
+import { vTip } from '../../../shared/tip.js'
 import StatChips from '../StatChips.vue'
 import StatusBadge from '../StatusBadge.vue'
 
@@ -204,7 +205,7 @@ watch(filter, () => { offset.value = 0; selected.value = []; load() })
       <template #cell-actions="{ row }">
         <div class="row-actions">
           <details class="menu" :open="menuFor === row.id" @toggle="menuFor = $event.target.open ? row.id : ''">
-            <summary class="icon-btn" aria-label="Сменить роль" data-tip="Сменить роль">роль</summary>
+            <summary v-tip="'Сменить роль'" class="icon-btn" aria-label="Сменить роль">роль</summary>
             <div class="menu-pop">
               <button type="button" @click="setRole(row, 'user')">Пользователь</button>
               <button type="button" @click="setRole(row, 'moderator')">Модератор</button>
