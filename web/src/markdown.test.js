@@ -14,4 +14,24 @@ describe('markdownTree', () => {
     expect(raw).not.toContain('"type":"html"')
     expect(raw).toContain('жирный')
   })
+
+  it('turns a results fence into song and verse items', () => {
+    const tree = markdownTree([
+      'Смотри',
+      '',
+      '```results',
+      '[{"kind":"song","title":"Благодать","lyrics":"Куплет"},{"kind":"verse","id":"Ин. 3:16","reference":"Ин. 3:16","text":"Ибо так"}]',
+      '```',
+      '',
+      '```results',
+      'не json',
+      '```',
+    ].join('\n'))
+    const raw = types(tree)
+    expect(raw).toContain('"type":"results"')
+    expect(raw).toContain('Куплет')
+    expect(raw).toContain('Ибо так')
+    expect(raw).toContain('"type":"pre"')
+    expect(raw).toContain('не json')
+  })
 })

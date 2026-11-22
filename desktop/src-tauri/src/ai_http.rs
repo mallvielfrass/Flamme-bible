@@ -51,8 +51,8 @@ pub async fn exchange(
     path: &str,
     body: Option<String>,
 ) -> Result<Reply, String> {
+    check_chat_path(method, path)?;
     let method = parse_method(method)?;
-    check_ai_path(path)?;
     let response = match send(base, token, method, path, body, Duration::from_secs(30)).await {
         Ok(response) => response,
         Err(reply) => return Ok(reply),
@@ -191,10 +191,29 @@ fn parse_method(raw: &str) -> Result<reqwest::Method, String> {
 }
 
 pub fn check_ai_path(path: &str) -> Result<(), String> {
-    if path.len() > 500 || !path.starts_with("/api/ai/") {
-        return Err("Запрос чата не подходит".into());
+    safe_path(path)?;
+    let bare = path.split('?').next().unwrap_or(path);
+    if bare.starts_with("/api/ai/") {
+        return Ok(());
     }
-    if path.contains("..") || path.contains('\\') || path.contains("//") {
+    Err("Запрос чата не подходит".into())
+}
+
+/// Чат и чтение текста песни или стиха. Запись — только в `/api/ai/`.
+pub fn check_chat_path(method: &str, path: &str) -> Result<(), String> {
+    safe_path(path)?;
+    let bare = path.split('?').next().unwrap_or(path);
+    if bare.starts_with("/api/ai/") {
+        return Ok(());
+    }
+    if method == "GET" && (bare == "/api/bible/semantic" || snapshot_path(bare)) {
+        return Ok(());
+    }
+    Err("Запрос чата не подходит".into())
+}
+
+fn safe_path(path: &str) -> Result<(), String> {
+    if path.len() > 500 || path.contains("..") || path.contains('\\') || path.contains("//") {
         return Err("Запрос чата не подходит".into());
     }
     let ok = path.chars().all(|ch| {
@@ -205,6 +224,43 @@ pub fn check_ai_path(path: &str) -> Result<(), String> {
         return Err("Запрос чата не подходит".into());
     }
     Ok(())
+}
+
+fn snapshot_path(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("/dimensions/") else {
+        return false;
+    };
+    let Some((dim, rest)) = rest.split_once("/songbooks/") else {
+        return false;
+    };
+    let Some((book, tail)) = rest.split_once('/') else {
+        return false;
+    };
+    tail == "snapshot" && is_uuid(dim) && is_uuid(book)
+}
+
+fn is_uuid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 36 {
+        return false;
+    }
+    let groups = [8usize, 4, 4, 4, 12];
+    let mut at = 0;
+    for (index, len) in groups.iter().enumerate() {
+        if index > 0 {
+            if bytes[at] != b'-' {
+                return false;
+            }
+            at += 1;
+        }
+        for _ in 0..*len {
+            if !bytes[at].is_ascii_hexdigit() {
+                return false;
+            }
+            at += 1;
+        }
+    }
+    at == 36
 }
 
 fn check_id(id: &str) -> Result<(), String> {
@@ -250,6 +306,16 @@ mod tests {
         assert!(check_ai_path("/api/ai/../plans").is_err());
         assert!(check_ai_path("/api/ai/chats?q=a b").is_err());
         assert!(check_ai_path("https://example.com/api/ai/chats").is_err());
+        let book = "/dimensions/11111111-1111-4111-8111-111111111111/songbooks/22222222-2222-4222-8222-222222222222/snapshot";
+        assert!(check_chat_path("GET", book).is_ok());
+        assert!(check_chat_path("POST", book).is_err());
+        assert!(check_chat_path("GET", "/api/bible/semantic?q=%D0%98%D0%BD").is_ok());
+        assert!(check_chat_path("GET", "/api/plans").is_err());
+        assert!(check_chat_path(
+            "GET",
+            "/dimensions/not-uuid/songbooks/22222222-2222-4222-8222-222222222222/snapshot"
+        )
+        .is_err());
     }
 
     #[test]

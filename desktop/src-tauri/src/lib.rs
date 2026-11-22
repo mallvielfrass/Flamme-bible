@@ -11,9 +11,13 @@ mod updater;
 mod visio;
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use uuid::Uuid;
+
+static CLOSE_GUARD: AtomicBool = AtomicBool::new(false);
+static ALLOW_CLOSE: AtomicBool = AtomicBool::new(false);
 
 use crate::plans::PlanItem;
 use crate::remote::{HeaderTemplate, NewSongbook, PushOp, Remote, RemoteError};
@@ -812,10 +816,40 @@ fn ai_http_cancel(id: String) {
     ai_http::cancel(&id);
 }
 
+#[tauri::command]
+fn set_close_guard(enabled: bool) {
+    CLOSE_GUARD.store(enabled, Ordering::SeqCst);
+}
+
+#[tauri::command]
+fn finish_close(window: tauri::WebviewWindow) -> Result<(), String> {
+    ALLOW_CLOSE.store(true, Ordering::SeqCst);
+    if let Err(err) = window.close() {
+        ALLOW_CLOSE.store(false, Ordering::SeqCst);
+        return Err(err.to_string());
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                let emitter = window.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        if CLOSE_GUARD.load(Ordering::SeqCst) && !ALLOW_CLOSE.load(Ordering::SeqCst)
+                        {
+                            api.prevent_close();
+                            let _ = emitter.emit("close-requested", ());
+                        }
+                    }
+                });
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             client_version,
             load_settings,
@@ -843,6 +877,8 @@ pub fn run() {
             ai_http,
             ai_http_stream,
             ai_http_cancel,
+            set_close_guard,
+            finish_close,
         ])
         .run(tauri::generate_context!())
         .expect("окно не открылось");

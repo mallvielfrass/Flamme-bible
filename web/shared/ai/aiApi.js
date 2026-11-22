@@ -68,6 +68,12 @@ export function createAiApi({ baseUrl = '', getAuth, fetch: doFetch } = {}) {
     providers() {
       return request('/api/ai/providers')
     },
+    snapshot(dimensionId, songbookId) {
+      return request(`/dimensions/${dimensionId}/songbooks/${songbookId}/snapshot`)
+    },
+    bibleSemantic(q) {
+      return request(`/api/bible/semantic?q=${encodeURIComponent(q)}&limit=5`)
+    },
     createProvider(body) {
       return request('/api/ai/providers', { method: 'POST', body })
     },

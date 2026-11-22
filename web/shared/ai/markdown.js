@@ -1,5 +1,6 @@
 import MarkdownIt from 'markdown-it'
 import { splitEmoji } from '../../src/emoji.js'
+import { parseResults } from './results.js'
 
 const md = new MarkdownIt({
   html: false,
@@ -11,7 +12,8 @@ md.validateLink = (url) => /^https?:\/\//i.test(String(url || '').trim())
 
 /**
  * @typedef {Object} MdNode
- * @property {'text'|'emoji'|'p'|'br'|'strong'|'em'|'s'|'code'|'pre'|'a'|'ul'|'ol'|'li'|'quote'|'h'|'group'} type
+ * @property {'text'|'emoji'|'p'|'br'|'strong'|'em'|'s'|'code'|'pre'|'a'|'ul'|'ol'|'li'|'quote'|'h'|'group'|'results'} type
+ * @property {import('./results.js').AiResult[]} [items]
  * @property {string} [text]
  * @property {string} [href]
  * @property {string} [cps]
@@ -36,6 +38,13 @@ function blocks(tokens) {
     if (tok.type === 'inline') {
       for (const node of inline(tok.children || [])) push(stack, node)
       continue
+    }
+    if (tok.type === 'fence' && String(tok.info || '').trim() === 'results') {
+      const items = parseResults(tok.content || '')
+      if (items.length) {
+        push(stack, { type: 'results', items })
+        continue
+      }
     }
     if (tok.type === 'fence' || tok.type === 'code_block') {
       push(stack, { type: 'pre', text: tok.content || '' })

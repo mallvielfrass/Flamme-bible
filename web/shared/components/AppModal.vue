@@ -41,7 +41,9 @@ function onKey(event) {
 
 onMounted(() => {
   const preferred = root.value?.querySelector('[data-autofocus]')
-  ;(preferred || focusable()[0] || root.value)?.focus()
+  const target = preferred || focusable()[0] || root.value
+  const fromKeyboard = document.activeElement instanceof HTMLElement && document.activeElement.matches(':focus-visible')
+  target?.focus({ focusVisible: fromKeyboard })
   document.addEventListener('keydown', onKey)
 })
 
