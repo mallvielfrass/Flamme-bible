@@ -214,3 +214,10 @@ func TestReadImages(t *testing.T) {
 		t.Fatalf("картинка не ушла частью: %s", body.Messages[1].Content)
 	}
 }
+
+func TestHistoryNote(t *testing.T) {
+	msgs := History(time.Now(), []Turn{{Role: "user", Content: "вопрос", Note: "\n[пометка]"}})
+	if msgs[1].Content != "вопрос\n[пометка]" {
+		t.Fatalf("пометка %q", msgs[1].Content)
+	}
+}

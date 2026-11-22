@@ -20,10 +20,12 @@ var ruMonth = [...]string{
 }
 
 // Turn — уже сохранённая реплика чата. Images — data: URL картинок,
-// только у нового вопроса: в истории картинки не хранятся.
+// только у нового вопроса: в истории картинки не хранятся. Note — пометка
+// для модели (например, о картинках), она идёт после текста реплики.
 type Turn struct {
 	Role    string
 	Content string
+	Note    string
 	Images  []string
 }
 
@@ -71,7 +73,7 @@ func History(now time.Time, turns []Turn) []provider.Message {
 		if turn.Role != "user" && turn.Role != "assistant" {
 			continue
 		}
-		msg := provider.Message{Role: turn.Role, Content: turn.Content}
+		msg := provider.Message{Role: turn.Role, Content: turn.Content + turn.Note}
 		if turn.Role == "user" {
 			msg.Images = turn.Images
 		}
@@ -87,7 +89,7 @@ func tail(turns []Turn) []Turn {
 		if turns[i].Role != "user" && turns[i].Role != "assistant" {
 			continue
 		}
-		n := utf8.RuneCountInString(turns[i].Content)
+		n := utf8.RuneCountInString(turns[i].Content) + utf8.RuneCountInString(turns[i].Note)
 		if start != len(turns) && total+n > historyLimit {
 			break
 		}

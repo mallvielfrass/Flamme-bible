@@ -605,7 +605,7 @@ func (s *Server) postAIMessage(w http.ResponseWriter, r *http.Request) {
 		// иначе — текст, который с них прочитала модель задачи «Фото».
 		last := &turns[len(turns)-1]
 		if reader.ID == model.ID {
-			last.Content, last.Images = text, body.Images
+			last.Note, last.Images = "", body.Images
 		} else {
 			read, u, err := s.readImages(runCtx, reader, assistantID, body.Images, send)
 			readUsage = u
@@ -615,7 +615,7 @@ func (s *Server) postAIMessage(w http.ResponseWriter, r *http.Request) {
 				_ = send("done", map[string]any{"message_id": assistantID, "stopped": false})
 				return
 			}
-			last.Content = text + imageNote(&imageMeta{Count: len(body.Images), Text: read})
+			last.Note = imageNote(&imageMeta{Count: len(body.Images), Text: read})
 		}
 	}
 	var buf strings.Builder
@@ -841,7 +841,7 @@ func (s *Server) prepareTurn(ctx context.Context, userID, chatID, text string, i
 			rows.Close()
 			return "", nil, "", err
 		}
-		turn.Content += imageNote(parseImageMeta(meta))
+		turn.Note = imageNote(parseImageMeta(meta))
 		turns = append(turns, turn)
 	}
 	err = rows.Err()
