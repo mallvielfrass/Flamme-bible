@@ -429,36 +429,8 @@ impl Remote {
         format!("{}/api/releases/{version}/download/{platform}", self.base)
     }
 
-    pub async fn download_release(
-        &self,
-        version: &str,
-        platform: &str,
-    ) -> Result<Download, String> {
-        let url = self.release_url(version, platform);
-        let response = self
-            .http
-            .get(&url)
-            .send()
-            .await
-            .map_err(|err| format!("Нет связи с сервером: {err}"))?;
-        let status = response.status();
-        let header = response
-            .headers()
-            .get("x-content-sha256")
-            .and_then(|value| value.to_str().ok())
-            .map(|value| value.to_string());
-        if !status.is_success() {
-            return Err(format!("Обновление не скачалось ({status})"));
-        }
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|err| err.to_string())?
-            .to_vec();
-        Ok(Download {
-            bytes,
-            sha256: header.unwrap_or_default(),
-        })
+    pub(crate) fn http(&self) -> &reqwest::Client {
+        &self.http
     }
 
     pub(crate) async fn exchange<B: Serialize>(
@@ -527,12 +499,6 @@ impl Remote {
 pub(crate) struct Reply {
     pub status: u16,
     pub text: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct Download {
-    pub bytes: Vec<u8>,
-    pub sha256: String,
 }
 
 #[derive(Serialize)]

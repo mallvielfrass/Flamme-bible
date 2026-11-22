@@ -3,6 +3,7 @@ mod mojibake;
 mod paths;
 mod plan_tab;
 mod plans;
+mod portable;
 mod remote;
 mod running;
 mod sync;
@@ -45,15 +46,6 @@ struct StartRequest {
 struct SyncReport {
     notes: Vec<String>,
     backups: Vec<String>,
-}
-
-#[derive(serde::Serialize)]
-struct UpdateView {
-    current: String,
-    latest: String,
-    notes: String,
-    available: bool,
-    platform: String,
 }
 
 fn settings_dir() -> Result<std::path::PathBuf, String> {
@@ -768,47 +760,8 @@ async fn search_songs(query: String) -> Result<Vec<remote::SongHit>, String> {
         .await
 }
 
-#[tauri::command]
-async fn check_update() -> Result<UpdateView, String> {
-    let (_, cfg) = load_config()?;
-    let info = Remote::new(&cfg.server_url, "")?.latest_release().await?;
-    let platform = updater::this_platform();
-    Ok(UpdateView {
-        current: updater::current_version().into(),
-        latest: info.version.clone(),
-        notes: info.notes.clone(),
-        available: updater::version_is_newer(updater::current_version(), &info.version)
-            && info.status == "released"
-            && info.file(platform).is_some(),
-        platform: platform.into(),
-    })
-}
-
-#[tauri::command]
-async fn download_update() -> Result<String, String> {
-    let (dir, cfg) = load_config()?;
-    let client = remote::Remote::download_client(&cfg.server_url)?;
-    let info = client.latest_release().await?;
-    let platform = updater::this_platform();
-    let file = info
-        .file(platform)
-        .ok_or("Для этой системы нет файла обновления")?;
-    if file.platform != platform {
-        return Err("Для этой системы нет файла обновления".into());
-    }
-    let download = client.download_release(&info.version, platform).await?;
-    if download.bytes.len() as i64 != file.size {
-        return Err("Размер файла обновления не совпал".into());
-    }
-    let path = updater::save_verified(
-        &dir,
-        &info.version,
-        platform,
-        &download.bytes,
-        &download.sha256,
-        &file.sha256,
-    )?;
-    Ok(path.display().to_string())
+pub fn apply_pending_update() -> bool {
+    portable::apply_pending_update()
 }
 
 #[tauri::command]
@@ -868,8 +821,9 @@ pub fn run() {
             import_plan,
             export_plan,
             search_songs,
-            check_update,
-            download_update,
+            portable::check_update,
+            portable::download_update,
+            portable::install_update,
             set_close_guard,
             finish_close,
             plan_tab::plans_list,
