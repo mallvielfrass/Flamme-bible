@@ -50,16 +50,24 @@ func (s *Server) searchSongs(w http.ResponseWriter, r *http.Request) {
 		}
 		offset = n
 	}
-	bookArg, dimArg, sectionArg, err := songSearchScope(r)
+	book, dim, section, err := songSearchScope(r)
 	if err != nil {
 		writeMapped(w, err)
 		return
 	}
-	if err := s.usableSection(r.Context(), p.UserID, sectionArg, bookArg); err != nil {
+	hits, err := s.findSongs(r.Context(), p.UserID, q, book, dim, section, limit, offset)
+	if err != nil {
 		writeMapped(w, err)
 		return
 	}
-	rows, err := s.db.Query(r.Context(), `
+	writeJSON(w, http.StatusOK, map[string]any{"songs": hits})
+}
+
+func (s *Server) findSongs(ctx context.Context, userID, q string, book, dim, section any, limit, offset int) ([]songHit, error) {
+	if err := s.usableSection(ctx, userID, section, book); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(ctx, `
 		SELECT s.songbook_id::text, s.fbid, s.title, b.title, b.dimension_id::text, b.status,
 		       `+sectionTitleSQL+`
 		FROM songs s
@@ -77,26 +85,23 @@ func (s *Server) searchSongs(w http.ResponseWriter, r *http.Request) {
 		      )
 		ORDER BY s.title, s.songbook_id, s.fbid
 		LIMIT $5 OFFSET $6
-	`, likeContains(q), bookArg, dimArg, p.UserID, limit, offset, sectionArg)
+	`, likeContains(q), book, dim, userID, limit, offset, section)
 	if err != nil {
-		writeMapped(w, err)
-		return
+		return nil, err
 	}
 	defer rows.Close()
 	hits := []songHit{}
 	for rows.Next() {
 		var hit songHit
 		if err := rows.Scan(&hit.SongbookID, &hit.FBID, &hit.Title, &hit.SongbookTitle, &hit.DimensionID, &hit.Status, &hit.SectionTitle); err != nil {
-			writeMapped(w, err)
-			return
+			return nil, err
 		}
 		hits = append(hits, hit)
 	}
 	if err := rows.Err(); err != nil {
-		writeMapped(w, err)
-		return
+		return nil, err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"songs": hits})
+	return hits, nil
 }
 
 // songAccessWhere — то же правило, что у поиска по словам и по смыслу:
