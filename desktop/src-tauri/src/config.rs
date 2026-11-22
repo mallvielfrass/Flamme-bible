@@ -46,6 +46,16 @@ pub struct UserProfile {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct GroupLink {
+    #[serde(default)]
+    pub section_id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub songs: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct SongbookBind {
     #[serde(default)]
     pub server_id: String,
@@ -55,6 +65,8 @@ pub struct SongbookBind {
     pub cursor: i64,
     #[serde(default)]
     pub songs: Vec<Song>,
+    #[serde(default)]
+    pub groups: Vec<GroupLink>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -153,6 +165,7 @@ pub fn apply_server_url(cfg: &mut Config, url: &str) -> Result<(), String> {
             book.server_id.clear();
             book.cursor = 0;
             book.songs.clear();
+            book.groups.clear();
         }
         for plan in cfg.plans.values_mut() {
             plan.server_id.clear();
@@ -235,6 +248,11 @@ mod tests {
                     title: "Песня".into(),
                     ..crate::visio::Song::default()
                 }],
+                groups: vec![GroupLink {
+                    section_id: "section".into(),
+                    name: "Хор".into(),
+                    songs: vec!["song".into()],
+                }],
                 ..SongbookBind::default()
             },
         );
@@ -245,6 +263,7 @@ mod tests {
         assert_eq!(cfg.visio_path, "/tmp/visio");
         assert!(cfg.songbooks["a.vbm"].server_id.is_empty());
         assert!(cfg.songbooks["a.vbm"].songs.is_empty());
+        assert!(cfg.songbooks["a.vbm"].groups.is_empty());
         apply_server_url(&mut cfg, "https://example.com/").unwrap();
         assert_eq!(cfg.server_url, "https://example.com");
     }

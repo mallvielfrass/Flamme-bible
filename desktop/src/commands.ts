@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { PlanDecision, SongDecision } from "./syncState";
+import type { GroupDecision, PlanDecision, SongDecision } from "./syncState";
 
 export interface Settings {
   server_url: string;
@@ -61,9 +61,20 @@ export interface PlanRow {
   remote_summary: string;
 }
 
+export interface GroupRow {
+  book_path: string;
+  book_title: string;
+  section_id: string;
+  name: string;
+  action: string;
+  local_name: string;
+  remote_name: string;
+}
+
 export interface Preview {
   songs: SongRow[];
   plans: PlanRow[];
+  groups: GroupRow[];
   warnings: string[];
 }
 
@@ -125,8 +136,8 @@ export const api = {
   selectDimension: (dimension_id: string) => invoke<Settings>("select_dimension", { dimension_id }),
   openVisio: (path: string) => invoke<Scan>("open_visio", { path }),
   preview: () => invoke<Preview>("preview_sync"),
-  start: (songs: SongDecision[], plans: PlanDecision[]) =>
-    invoke<{ notes: string[]; backups: string[] }>("start_sync", { request: { songs, plans } }),
+  start: (songs: SongDecision[], plans: PlanDecision[], groups: GroupDecision[]) =>
+    invoke<{ notes: string[]; backups: string[] }>("start_sync", { request: { songs, plans, groups } }),
   createPlan: (name: string, items: PlanItem[]) => invoke<Scan["plans"][number]>("create_plan", { name, items }),
   searchSongs: (query: string) => invoke<SongHit[]>("search_songs", { query }),
   checkUpdate: () => invoke<UpdateView>("check_update"),

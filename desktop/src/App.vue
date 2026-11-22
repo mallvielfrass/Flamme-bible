@@ -7,7 +7,7 @@ import PlansView from "./components/PlansView.vue";
 import SyncView from "./components/SyncView.vue";
 import UpdatesView from "./components/UpdatesView.vue";
 import { api, type Dimension, type PlanItem, type Preview, type Progress, type Scan, type Settings, type SongHit, type SongRow, type UpdateView } from "./commands";
-import { canStart, conflictRows, decisionsFrom, planKey, songKey, type Choice } from "./syncState";
+import { canStart, conflictRows, decisionsFrom, groupKey, planKey, songKey, type Choice } from "./syncState";
 
 const tab = ref<"sync" | "plans" | "updates">("sync");
 const settings = ref<Settings>({
@@ -38,7 +38,7 @@ const updateError = ref("");
 const updateBusy = ref(false);
 const savedPath = ref("");
 
-const chosenRows = computed(() => conflictRows(preview.value?.songs ?? [], preview.value?.plans ?? []));
+const chosenRows = computed(() => conflictRows(preview.value?.songs ?? [], preview.value?.plans ?? [], preview.value?.groups ?? []));
 
 function note(line: string) {
   log.value = [...log.value, line];
@@ -117,6 +117,10 @@ function onPlanChoice(key: string, choice: "keep_local" | "take_server" | "keep_
   remember(planKey(key), { kind: choice });
 }
 
+function onGroupChoice(bookPath: string, sectionId: string, choice: "keep_local" | "take_server") {
+  remember(groupKey(bookPath, sectionId), { kind: choice });
+}
+
 function remember(key: string, choice: Choice) {
   chosen.value = { ...chosen.value, [key]: choice };
 }
@@ -129,9 +133,10 @@ async function start() {
     chosen.value,
     preview.value.songs,
     preview.value.plans,
+    preview.value.groups ?? [],
   );
   try {
-    const report = await api.start(payload.songs, payload.plans);
+    const report = await api.start(payload.songs, payload.plans, payload.groups);
     for (const line of report.notes) note(line);
     if (report.backups.length) note("Копии .bak сохранены рядом с изменёнными файлами.");
     if (settings.value.visio_path) scan.value = await api.openVisio(settings.value.visio_path);
@@ -253,6 +258,7 @@ onMounted(() => {
       @start="start"
       @open-conflict="conflict = $event"
       @resolve-plan="onPlanChoice"
+      @resolve-group="onGroupChoice"
       @repair="repairEncoding"
       @set-encoding="setPlanEncoding"
     />

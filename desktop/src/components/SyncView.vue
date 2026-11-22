@@ -36,6 +36,7 @@ const emit = defineEmits<{
   start: [];
   openConflict: [SongRow];
   resolvePlan: [string, "keep_local" | "take_server" | "keep_both"];
+  resolveGroup: [string, string, "keep_local" | "take_server"];
   repair: [string];
   setEncoding: [boolean];
 }>();
@@ -44,10 +45,11 @@ const VISIOBIBLE_OPEN = "Закройте VisioBible и нажмите „Пов
 
 const songs = computed(() => groupRows(props.preview?.songs ?? []));
 const plans = computed(() => groupRows(props.preview?.plans ?? []));
+const groups = computed(() => groupRows(props.preview?.groups ?? []));
 const startReady = computed(() => {
   const preview = props.preview;
   if (!preview) return false;
-  return canStart(conflictRows(preview.songs, preview.plans), props.chosen);
+  return canStart(conflictRows(preview.songs, preview.plans, preview.groups ?? []), props.chosen);
 });
 const visiobibleOpen = computed(() => props.error === VISIOBIBLE_OPEN);
 </script>
@@ -101,18 +103,20 @@ const visiobibleOpen = computed(() => props.error === VISIOBIBLE_OPEN);
       <template v-if="preview">
         <div class="group">
           <h3>Что отправится на сервер</h3>
-          <p v-if="songs.upload.length + plans.upload.length === 0" class="empty">Отправлять нечего.</p>
+          <p v-if="songs.upload.length + plans.upload.length + groups.upload.length === 0" class="empty">Отправлять нечего.</p>
           <ul class="list">
             <li v-for="row in songs.upload" :key="row.book_path + row.fbid">{{ row.book_title }} — {{ row.title }} · {{ actionLabel(row.action) }}</li>
             <li v-for="row in plans.upload" :key="row.key">План «{{ row.name }}» · {{ row.summary }}</li>
+            <li v-for="row in groups.upload" :key="row.book_path + row.section_id + row.name">{{ row.book_title }} — группа «{{ row.name }}» · {{ actionLabel(row.action) }}</li>
           </ul>
         </div>
         <div class="group">
           <h3>Что обновится с сервера</h3>
-          <p v-if="songs.download.length + plans.download.length === 0" class="empty">Скачивать нечего.</p>
+          <p v-if="songs.download.length + plans.download.length + groups.download.length === 0" class="empty">Скачивать нечего.</p>
           <ul class="list">
             <li v-for="row in songs.download" :key="row.book_path + row.fbid">{{ row.book_title }} — {{ row.title }} · {{ actionLabel(row.action) }}</li>
             <li v-for="row in plans.download" :key="row.key">План «{{ row.name }}» · {{ row.remote_summary }}</li>
+            <li v-for="row in groups.download" :key="row.book_path + row.section_id + row.name">{{ row.book_title }} — группа «{{ row.name }}» · {{ actionLabel(row.action) }}</li>
           </ul>
         </div>
         <div class="group">
@@ -141,7 +145,20 @@ const visiobibleOpen = computed(() => props.error === VISIOBIBLE_OPEN);
             </div>
           </article>
         </div>
-        <p class="hint">Без изменений: {{ songs.unchanged.length }} песен, {{ plans.unchanged.length }} планов.</p>
+        <div class="group">
+          <h3>Конфликты групп</h3>
+          <p v-if="groups.conflicts.length === 0" class="empty">Конфликтов групп нет.</p>
+          <article v-for="row in groups.conflicts" :key="row.book_path + row.section_id" class="conflict-card">
+            <strong>{{ row.book_title }} — группа</strong>
+            <p>В VisioBible: {{ row.local_name }}</p>
+            <p>На сервере: {{ row.remote_name }}</p>
+            <div class="row">
+              <button class="btn" type="button" @click="emit('resolveGroup', row.book_path, row.section_id, 'keep_local')">Оставить моё название</button>
+              <button class="btn" type="button" @click="emit('resolveGroup', row.book_path, row.section_id, 'take_server')">Взять название с сервера</button>
+            </div>
+          </article>
+        </div>
+        <p class="hint">Без изменений: {{ songs.unchanged.length }} песен, {{ plans.unchanged.length }} планов, {{ groups.unchanged.length }} групп.</p>
       </template>
       <p v-else-if="busy !== 'preview'" class="empty">Список появится после входа и выбора папки.</p>
     </section>

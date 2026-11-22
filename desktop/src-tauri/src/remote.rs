@@ -94,6 +94,17 @@ pub struct HeaderTemplate {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct SectionView {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub position: i32,
+    #[serde(default)]
+    pub songs: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct Snapshot {
     pub cursor: i64,
     #[serde(default)]
@@ -297,6 +308,50 @@ impl Remote {
         self.send(reqwest::Method::GET, &path, None::<&()>)
             .await
             .map_err(|err| err.to_string())
+    }
+
+    pub async fn sections(&self, book_id: &str) -> Result<Vec<SectionView>, String> {
+        let path = format!("/api/songbooks/{book_id}/sections");
+        self.send(reqwest::Method::GET, &path, None::<&()>)
+            .await
+            .map_err(|err| err.to_string())
+    }
+
+    pub async fn create_section(&self, book_id: &str, title: &str) -> Result<SectionView, String> {
+        let path = format!("/api/songbooks/{book_id}/sections");
+        let body = serde_json::json!({ "title": title });
+        self.send(reqwest::Method::POST, &path, Some(&body))
+            .await
+            .map_err(|err| err.to_string())
+    }
+
+    pub async fn rename_section(
+        &self,
+        book_id: &str,
+        section_id: &str,
+        title: &str,
+    ) -> Result<(), String> {
+        let path = format!("/api/songbooks/{book_id}/sections/{section_id}");
+        let body = serde_json::json!({ "title": title });
+        let _: SectionView = self
+            .send(reqwest::Method::PUT, &path, Some(&body))
+            .await
+            .map_err(|err| err.to_string())?;
+        Ok(())
+    }
+
+    pub async fn set_section_songs(
+        &self,
+        section_id: &str,
+        songs: &[String],
+    ) -> Result<(), String> {
+        let path = format!("/api/sections/{section_id}/songs");
+        let body = serde_json::json!({ "fbids": songs });
+        let _: SectionView = self
+            .send(reqwest::Method::PUT, &path, Some(&body))
+            .await
+            .map_err(|err| err.to_string())?;
+        Ok(())
     }
 
     pub async fn push(

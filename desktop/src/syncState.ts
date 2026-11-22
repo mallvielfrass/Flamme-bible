@@ -20,6 +20,10 @@ export function planKey(key: string): string {
   return JSON.stringify(["plan", key]);
 }
 
+export function groupKey(bookPath: string, sectionId: string): string {
+  return JSON.stringify(["group", bookPath, sectionId]);
+}
+
 export function countPhrase(count: number, one: string, few: string, many: string): string {
   const mod10 = count % 10;
   const mod100 = count % 100;
@@ -78,10 +82,12 @@ export function canStart(rows: { action: string; key: string }[], chosen: Record
 export function conflictRows(
   songs: { action: string; book_path: string; fbid: string }[],
   plans: { action: string; key: string }[],
+  groups: { action: string; book_path: string; section_id: string }[] = [],
 ): { action: string; key: string }[] {
   return [
     ...songs.filter((row) => row.action === "conflict").map((row) => ({ action: row.action, key: songKey(row.book_path, row.fbid) })),
     ...plans.filter((row) => row.action === "conflict").map((row) => ({ action: row.action, key: planKey(row.key) })),
+    ...groups.filter((row) => row.action === "conflict").map((row) => ({ action: row.action, key: groupKey(row.book_path, row.section_id) })),
   ];
 }
 
@@ -98,11 +104,18 @@ export interface PlanDecision {
   choice: string;
 }
 
+export interface GroupDecision {
+  book_path: string;
+  section_id: string;
+  choice: string;
+}
+
 export function decisionsFrom(
   chosen: Record<string, Choice>,
   songs: { book_path: string; fbid: string; action: string }[],
   plans: { key: string; action: string }[],
-): { songs: SongDecision[]; plans: PlanDecision[] } {
+  groups: { book_path: string; section_id: string; action: string }[] = [],
+): { songs: SongDecision[]; plans: PlanDecision[]; groups: GroupDecision[] } {
   const songDecisions: SongDecision[] = [];
   for (const song of songs) {
     if (song.action !== "conflict") continue;
@@ -123,5 +136,12 @@ export function decisionsFrom(
     if (!choice || choice.kind === "manual" || !choiceReady(choice)) continue;
     planDecisions.push({ key: plan.key, choice: choice.kind });
   }
-  return { songs: songDecisions, plans: planDecisions };
+  const groupDecisions: GroupDecision[] = [];
+  for (const group of groups) {
+    if (group.action !== "conflict") continue;
+    const choice = chosen[groupKey(group.book_path, group.section_id)];
+    if (!choice || choice.kind === "manual" || choice.kind === "keep_both" || !choiceReady(choice)) continue;
+    groupDecisions.push({ book_path: group.book_path, section_id: group.section_id, choice: choice.kind });
+  }
+  return { songs: songDecisions, plans: planDecisions, groups: groupDecisions };
 }

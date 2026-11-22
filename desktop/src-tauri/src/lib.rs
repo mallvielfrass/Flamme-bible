@@ -1,4 +1,5 @@
 mod config;
+mod groups;
 mod mojibake;
 mod paths;
 mod plans;
@@ -34,6 +35,8 @@ struct StartRequest {
     songs: Vec<sync::SongDecision>,
     #[serde(default)]
     plans: Vec<sync::PlanDecision>,
+    #[serde(default)]
+    groups: Vec<sync::GroupDecision>,
 }
 
 #[derive(serde::Serialize)]
@@ -212,7 +215,13 @@ async fn start_sync(app: tauri::AppHandle, request: StartRequest) -> Result<Sync
         return Err(warning);
     }
     let mut next_id = || Uuid::new_v4().to_string();
-    let outcome = sync::apply(&input, &request.songs, &request.plans, &mut next_id)?;
+    let outcome = sync::apply(
+        &input,
+        &request.songs,
+        &request.plans,
+        &request.groups,
+        &mut next_id,
+    )?;
     let writes_local =
         outcome.books.iter().any(|book| book.write) || outcome.plans.iter().any(|plan| plan.write);
     if writes_local {
@@ -224,6 +233,13 @@ async fn start_sync(app: tauri::AppHandle, request: StartRequest) -> Result<Sync
     for book in &outcome.books {
         if book.create || !book.push.is_empty() {
             steps.push(("Отправка на сервер", book.title.clone()));
+        }
+        if book
+            .group_ops
+            .iter()
+            .any(|row| row.create || row.rename || row.push_songs)
+        {
+            steps.push(("Разделы сборника", book.title.clone()));
         }
         if book.write {
             steps.push(("Запись на компьютер", book.title.clone()));
@@ -284,6 +300,32 @@ async fn start_sync(app: tauri::AppHandle, request: StartRequest) -> Result<Sync
             }
             completed += 1;
         }
+        let mut links: Vec<config::GroupLink> = book
+            .group_state
+            .iter()
+            .map(|row| config::GroupLink {
+                section_id: row.section_id.clone(),
+                name: row.name.clone(),
+                songs: row.songs.clone(),
+            })
+            .collect();
+        if book
+            .group_ops
+            .iter()
+            .any(|row| row.create || row.rename || row.push_songs)
+        {
+            emit_step(&app, &steps, step_index, completed, total);
+            step_index += 1;
+            if server_id.is_empty() {
+                return Err("Сборник ещё не создан на сервере".into());
+            }
+            apply_groups(&client, &server_id, book, &mut links).await?;
+            notes.push(format!(
+                "Группы сборника «{}» сверены с разделами.",
+                book.title
+            ));
+            completed += 1;
+        }
         if book.write {
             ensure_visiobible_closed()?;
             emit_step(&app, &steps, step_index, completed, total);
@@ -312,6 +354,7 @@ async fn start_sync(app: tauri::AppHandle, request: StartRequest) -> Result<Sync
                 book_fbid: book.book_fbid.clone(),
                 cursor,
                 songs: book.songs.clone(),
+                groups: links,
             },
         );
     }
@@ -493,8 +536,61 @@ fn book_from(book: &sync::BookWork) -> Book {
         revision_date: book.revision_date.clone(),
         comment: book.comment.clone(),
         songs: book.songs.clone(),
-        groups: Vec::new(),
+        groups: book.groups.clone(),
         bytes_left: 0,
+    }
+}
+
+async fn apply_groups(
+    client: &Remote,
+    book_id: &str,
+    book: &sync::BookWork,
+    links: &mut [config::GroupLink],
+) -> Result<(), String> {
+    let live: std::collections::BTreeSet<&str> =
+        book.songs.iter().map(|song| song.fbid.as_str()).collect();
+    for op in &book.group_ops {
+        let songs: Vec<String> = op
+            .songs
+            .iter()
+            .filter(|id| live.contains(id.as_str()))
+            .cloned()
+            .collect();
+        let section_id = if op.create {
+            let id = ensure_section(client, book_id, &op.name).await?;
+            if let Some(link) = links
+                .iter_mut()
+                .find(|link| link.section_id.is_empty() && link.name == op.name)
+            {
+                link.section_id = id.clone();
+            }
+            id
+        } else {
+            if op.rename {
+                client
+                    .rename_section(book_id, &op.section_id, &op.name)
+                    .await?;
+            }
+            op.section_id.clone()
+        };
+        if op.push_songs || (op.create && !songs.is_empty()) {
+            client.set_section_songs(&section_id, &songs).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn ensure_section(client: &Remote, book_id: &str, title: &str) -> Result<String, String> {
+    match client.create_section(book_id, title).await {
+        Ok(section) => Ok(section.id),
+        Err(err) if err == "раздел" => client
+            .sections(book_id)
+            .await?
+            .into_iter()
+            .find(|section| section.title == title)
+            .map(|section| section.id)
+            .ok_or(err),
+        Err(err) => Err(err),
     }
 }
 
@@ -538,7 +634,19 @@ async fn gather() -> Result<(std::path::PathBuf, config::Config, Gathered), Stri
             base: bind.map(|bind| bind.songs.clone()).unwrap_or_default(),
             server_id: bind.map(|bind| bind.server_id.clone()).unwrap_or_default(),
             book_fbid: bind.map(|bind| bind.book_fbid.clone()).unwrap_or_default(),
-            has_groups: !parsed.groups.is_empty(),
+            groups: parsed.groups,
+            base_groups: bind
+                .map(|bind| {
+                    bind.groups
+                        .iter()
+                        .map(|group| groups::Baseline {
+                            section_id: group.section_id.clone(),
+                            name: group.name.clone(),
+                            songs: group.songs.clone(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         });
     }
     cfg.pending_fbids = pending;
@@ -554,6 +662,13 @@ async fn gather() -> Result<(std::path::PathBuf, config::Config, Gathered), Stri
         for song in snap.songs {
             songs.push(visio::normalize_remote_song(&song)?);
         }
+        let mut sections = client.sections(&view.id).await?;
+        sections.sort_by(|left, right| {
+            left.position
+                .cmp(&right.position)
+                .then(left.title.cmp(&right.title))
+                .then(left.id.cmp(&right.id))
+        });
         remote_books.push(RemoteBook {
             server_id: view.id,
             fbid: view.fbid,
@@ -569,6 +684,14 @@ async fn gather() -> Result<(std::path::PathBuf, config::Config, Gathered), Stri
             header_title: view.header.header_title,
             songs,
             order: snap.order,
+            sections: sections
+                .into_iter()
+                .map(|section| groups::Section {
+                    id: section.id,
+                    name: section.title,
+                    songs: section.songs,
+                })
+                .collect(),
         });
     }
     let (remote_plans, plan_warning) = match client.plans("all").await {

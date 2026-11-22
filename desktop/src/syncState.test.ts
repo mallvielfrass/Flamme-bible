@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionLabel, canStart, conflictRows, countPhrase, decisionsFrom, foundLine, groupRows, planKey, songKey } from "./syncState";
+import { actionLabel, canStart, conflictRows, countPhrase, decisionsFrom, foundLine, groupKey, groupRows, planKey, songKey } from "./syncState";
 
 describe("sync screen state", () => {
   it("groups uploads, downloads and conflicts without showing raw codes", () => {
@@ -56,6 +56,15 @@ describe("sync screen state", () => {
     expect(decisionsFrom(chosen, songs, plans)).toEqual({
       songs: [{ book_path: "a.vbm", fbid: "s1", choice: "take_server", title: "", lyrics: "" }],
       plans: [{ key: "plan-1", choice: "keep_local" }],
+      groups: [],
     });
+    const groups = [{ book_path: "a.vbm", section_id: "sec", action: "conflict" }];
+    const withGroup = conflictRows(songs, plans, groups);
+    expect(canStart(withGroup, chosen)).toBe(false);
+    const groupChosen = { ...chosen, [groupKey("a.vbm", "sec")]: { kind: "keep_local" as const } };
+    expect(canStart(withGroup, groupChosen)).toBe(true);
+    expect(decisionsFrom(groupChosen, songs, plans, groups).groups).toEqual([
+      { book_path: "a.vbm", section_id: "sec", choice: "keep_local" },
+    ]);
   });
 });
