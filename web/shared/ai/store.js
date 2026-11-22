@@ -1,6 +1,7 @@
 import { computed, reactive, ref } from 'vue'
 import { explain } from '../http.js'
 import { loadResult } from './results.js'
+import { mergeCards, songFromHit } from './songbooks.js'
 
 /**
  * @typedef {Object} AiChat
@@ -165,6 +166,12 @@ function createAi() {
         } else if (ev.event === 'delta' && assistant) {
           assistant = { ...assistant, content: assistant.content + (data.text || '') }
           replaceMessage(assistant)
+        } else if (ev.event === 'tool_result' && assistant) {
+          const cards = mergeCards(assistant.cards, data.cards)
+          if (cards.length) {
+            assistant = { ...assistant, cards }
+            replaceMessage(assistant)
+          }
         } else if (ev.event === 'usage' && assistant) {
           assistant = {
             ...assistant,
@@ -206,6 +213,12 @@ function createAi() {
     return loadResult(client, item)
   }
 
+  async function listSongbookSongs(book) {
+    if (!client) throw new Error('Нет связи с сервером.')
+    const data = await client.searchSongs('', { songbookId: book.id, limit: 1000 })
+    return (data.songs || []).map(songFromHit).filter(Boolean)
+  }
+
   async function stop(id) {
     try {
       await client.stop(id)
@@ -218,6 +231,6 @@ function createAi() {
   return reactive({
     chats, messages, current, providers, tasks, modelId, query, streaming, activeId,
     error, chatOff, hasProvider,
-    useApi, loadProviders, loadChats, open, create, patch, remove, pickModel, send, stop, fetchResult,
+    useApi, loadProviders, loadChats, open, create, patch, remove, pickModel, send, stop, fetchResult, listSongbookSongs,
   })
 }

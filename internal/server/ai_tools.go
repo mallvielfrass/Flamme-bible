@@ -83,11 +83,22 @@ func aiTool(name, description, schema string) provider.Tool {
 	}
 }
 
+// aiCard — интерактивный элемент под ответом (сборник, позже можно и другое).
+// Пишется в ai_messages.cards и уходит клиенту в tool_result и в истории чата.
+type aiCard struct {
+	Kind        string `json:"kind"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Note        string `json:"note,omitempty"`
+	DimensionID string `json:"dimension_id,omitempty"`
+}
+
 // aiToolOutcome — ответ инструмента для модели и короткая строка для интерфейса.
 type aiToolOutcome struct {
 	Content string
 	Summary string
 	OK      bool
+	Cards   []aiCard
 }
 
 // runAITool выполняет вызов от имени userID. Ошибка не прерывает ответ:
@@ -107,7 +118,11 @@ func (s *Server) runAITool(ctx context.Context, userID string, call provider.Too
 	if err != nil {
 		return aiToolOutcome{Content: `{"error":"ответ инструмента"}`, Summary: "ошибка"}
 	}
-	return aiToolOutcome{Content: clipRunes(string(raw), aiToolResultRunes), Summary: summary, OK: true}
+	out := aiToolOutcome{Content: clipRunes(string(raw), aiToolResultRunes), Summary: summary, OK: true}
+	if name := call.Function.Name; name == "list_songbooks" {
+		out.Cards = songbookCards(result)
+	}
+	return out
 }
 
 func aiToolError(err error) string {
@@ -462,4 +477,70 @@ func countSummary(n int) string {
 		return "ничего не найдено"
 	}
 	return "найдено: " + strconv.Itoa(n)
+}
+
+// songbookCards достаёт из ответа list_songbooks то, что нужно чипам в чате.
+func songbookCards(result any) []aiCard {
+	raw, err := json.Marshal(result)
+	if err != nil {
+		return nil
+	}
+	var data struct {
+		Groups []struct {
+			Name        string `json:"name"`
+			DimensionID string `json:"dimension_id"`
+			Songbooks   []struct {
+				ID          string `json:"id"`
+				Title       string `json:"title"`
+				DimensionID string `json:"dimension_id"`
+			} `json:"songbooks"`
+		} `json:"groups"`
+	}
+	if json.Unmarshal(raw, &data) != nil {
+		return nil
+	}
+	out := []aiCard{}
+	for _, group := range data.Groups {
+		for _, book := range group.Songbooks {
+			id := strings.TrimSpace(book.ID)
+			if !validUUID(id) {
+				continue
+			}
+			dim := strings.TrimSpace(book.DimensionID)
+			if dim == "" {
+				dim = strings.TrimSpace(group.DimensionID)
+			}
+			title := strings.TrimSpace(book.Title)
+			if title == "" {
+				title = "Сборник"
+			}
+			out = append(out, aiCard{
+				Kind:        "songbook",
+				ID:          id,
+				Title:       title,
+				Note:        strings.TrimSpace(group.Name),
+				DimensionID: dim,
+			})
+		}
+	}
+	return out
+}
+
+func appendCards(dst, extra []aiCard) []aiCard {
+	if len(extra) == 0 {
+		return dst
+	}
+	seen := make(map[string]bool, len(dst)+len(extra))
+	for _, card := range dst {
+		seen[card.Kind+"\t"+card.ID] = true
+	}
+	for _, card := range extra {
+		key := card.Kind + "\t" + card.ID
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		dst = append(dst, card)
+	}
+	return dst
 }

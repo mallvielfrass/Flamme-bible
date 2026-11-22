@@ -108,12 +108,34 @@ export async function loadResult(client, item) {
   return loadVerse(client, item.title || item.id)
 }
 
-async function loadSong(client, id) {
-  const [dim, book, ...rest] = String(id || '').split('/')
-  const fbid = rest.join('/')
-  if (!uuid.test(dim) || !uuid.test(book) || !fbid || fbid.includes('..')) {
-    throw new Error('Текст не найден.')
+function parseSongRef(id) {
+  const parts = String(id || '').split('/')
+  if (parts.length >= 3 && uuid.test(parts[0]) && uuid.test(parts[1])) {
+    const fbid = parts.slice(2).join('/')
+    if (!fbid || fbid.includes('..')) return null
+    return { dim: parts[0], book: parts[1], fbid }
   }
+  if (parts.length >= 2 && uuid.test(parts[0])) {
+    const fbid = parts.slice(1).join('/')
+    if (!fbid || fbid.includes('..')) return null
+    return { book: parts[0], fbid }
+  }
+  return null
+}
+
+async function loadSong(client, id) {
+  const ref = parseSongRef(id)
+  if (!ref) throw new Error('Текст не найден.')
+  // /api/songs/text работает и для одобренных общих сборников, снимок — только для своих.
+  if (typeof client.songText === 'function') {
+    const data = await client.songText(ref.book, ref.fbid)
+    const body = text(data?.text)
+    if (body) return body
+  }
+  const dim = ref.dim
+  const book = ref.book
+  const fbid = ref.fbid
+  if (!dim) throw new Error('Текст не найден.')
   const key = `${dim}/${book}`
   if (!books.has(key)) {
     books.set(key, client.snapshot(dim, book).catch((err) => {

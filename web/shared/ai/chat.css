@@ -547,6 +547,32 @@
 
 .ai-hit summary .ai-hit-add { margin-left: auto; flex: none; }
 .ai-hit-done { margin: 0 0.85rem 0.5rem 1.7rem; color: var(--green, #1f7a45); }
+
+.ai-books { margin: 0.55rem 0 0; }
+.ai-books-label {
+  margin: 0 0 0.35rem;
+  color: var(--gold);
+  font: 600 0.72rem var(--sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ai-books-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.ai-book {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.55rem;
+  margin: 0;
+  padding: 0.45rem 0.7rem;
+  background: #fff;
+  border: 1px solid var(--line, #e4d6b8);
+  border-radius: 10px;
+  font: 0.9rem var(--sans);
+  text-align: left;
+  cursor: pointer;
+}
+.ai-book:hover { border-color: #c8b58a; }
+.ai-book-search { display: grid; gap: 0.3rem; margin: 0 0 0.7rem; }
 .ai-hits .icon-btn {
   display: inline-flex;
   align-items: center;

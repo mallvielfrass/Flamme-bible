@@ -39,6 +39,7 @@ type aiMsgView struct {
 	Status           string    `json:"status"`
 	PromptTokens     *int      `json:"prompt_tokens,omitempty"`
 	CompletionTokens *int      `json:"completion_tokens,omitempty"`
+	Cards            []aiCard  `json:"cards,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 }
 
@@ -251,7 +252,7 @@ func (s *Server) loadAIChat(ctx context.Context, userID, id string) (aiChatView,
 
 func (s *Server) loadAIMessages(ctx context.Context, chatID string) ([]aiMsgView, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT id::text, seq, role, content, model, status, prompt_tokens, completion_tokens, created_at
+		SELECT id::text, seq, role, content, model, status, prompt_tokens, completion_tokens, cards, created_at
 		FROM ai_messages
 		WHERE chat_id = $1
 		ORDER BY seq
@@ -263,8 +264,12 @@ func (s *Server) loadAIMessages(ctx context.Context, chatID string) ([]aiMsgView
 	list := []aiMsgView{}
 	for rows.Next() {
 		var msg aiMsgView
-		if err := rows.Scan(&msg.ID, &msg.Seq, &msg.Role, &msg.Content, &msg.Model, &msg.Status, &msg.PromptTokens, &msg.CompletionTokens, &msg.CreatedAt); err != nil {
+		var cards []byte
+		if err := rows.Scan(&msg.ID, &msg.Seq, &msg.Role, &msg.Content, &msg.Model, &msg.Status, &msg.PromptTokens, &msg.CompletionTokens, &cards, &msg.CreatedAt); err != nil {
 			return nil, err
+		}
+		if len(cards) > 0 && json.Unmarshal(cards, &msg.Cards) != nil {
+			msg.Cards = nil
 		}
 		msg.CreatedAt = msg.CreatedAt.UTC()
 		list = append(list, msg)
@@ -569,11 +574,12 @@ func (s *Server) postAIMessage(w http.ResponseWriter, r *http.Request) {
 		return writeSSE(w, flusher, event, payload)
 	}
 	if err := send("message_start", map[string]string{"message_id": assistantID, "model": model.Name}); err != nil {
-		s.finishAnswer(ctx, assistantID, "", model.Name, "stopped", provider.Usage{})
+		s.finishAnswer(ctx, assistantID, "", model.Name, "stopped", provider.Usage{}, nil)
 		return
 	}
 	var buf strings.Builder
-	usage, runErr := agent.Run(runCtx, s.chatClient(model.BaseURL, model.Token), model.Name, turns, time.Now(), s.chatTools(p.UserID, model, settings, send), func(delta string) error {
+	var cards []aiCard
+	usage, runErr := agent.Run(runCtx, s.chatClient(model.BaseURL, model.Token), model.Name, turns, time.Now(), s.chatTools(p.UserID, model, settings, send, &cards), func(delta string) error {
 		buf.WriteString(delta)
 		return send("delta", map[string]string{"text": delta})
 	})
@@ -589,7 +595,7 @@ func (s *Server) postAIMessage(w http.ResponseWriter, r *http.Request) {
 			errText = chatErrorText(runErr)
 		}
 	}
-	s.finishAnswer(ctx, assistantID, buf.String(), model.Name, status, usage)
+	s.finishAnswer(ctx, assistantID, buf.String(), model.Name, status, usage, cards)
 	if errText != "" {
 		_ = send("error", map[string]string{"error": errText})
 	}
@@ -615,7 +621,7 @@ func (s *Server) postAIMessage(w http.ResponseWriter, r *http.Request) {
 
 // chatTools — инструменты чтения для модели с отметкой «tools». Каждый вызов
 // показывается в интерфейсе событиями tool_start и tool_result.
-func (s *Server) chatTools(userID string, model chatModel, settings aiSettings, send func(string, any) error) agent.Tools {
+func (s *Server) chatTools(userID string, model chatModel, settings aiSettings, send func(string, any) error, cards *[]aiCard) agent.Tools {
 	if !model.CanTools {
 		return agent.Tools{}
 	}
@@ -629,7 +635,14 @@ func (s *Server) chatTools(userID string, model chatModel, settings aiSettings, 
 			}
 			_ = send("tool_start", map[string]any{"call_id": call.ID, "name": call.Function.Name, "label": aiToolLabel(call), "args": args})
 			out := s.runAITool(ctx, userID, call)
-			_ = send("tool_result", map[string]any{"call_id": call.ID, "ok": out.OK, "summary": out.Summary})
+			payload := map[string]any{"call_id": call.ID, "ok": out.OK, "summary": out.Summary}
+			if len(out.Cards) > 0 {
+				payload["cards"] = out.Cards
+				if cards != nil {
+					*cards = appendCards(*cards, out.Cards)
+				}
+			}
+			_ = send("tool_result", payload)
 			return out.Content
 		},
 	}
@@ -679,7 +692,7 @@ func (s *Server) saveChatTitle(ctx context.Context, chatID, title string) error 
 	return err
 }
 
-func (s *Server) finishAnswer(ctx context.Context, id, content, model, status string, usage provider.Usage) {
+func (s *Server) finishAnswer(ctx context.Context, id, content, model, status string, usage provider.Usage, cards []aiCard) {
 	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	var prompt, completion any
@@ -687,11 +700,20 @@ func (s *Server) finishAnswer(ctx context.Context, id, content, model, status st
 		prompt = usage.PromptTokens
 		completion = usage.CompletionTokens
 	}
+	var raw any
+	if len(cards) > 0 {
+		b, err := json.Marshal(cards)
+		if err != nil {
+			log.Printf("карточки чата: %v", err)
+		} else {
+			raw = b
+		}
+	}
 	if _, err := s.db.Exec(saveCtx, `
 		UPDATE ai_messages
-		SET content = $2, model = $3, status = $4, prompt_tokens = $5, completion_tokens = $6
+		SET content = $2, model = $3, status = $4, prompt_tokens = $5, completion_tokens = $6, cards = $7
 		WHERE id = $1
-	`, id, content, model, status, prompt, completion); err != nil {
+	`, id, content, model, status, prompt, completion, raw); err != nil {
 		log.Printf("ответ чата: %v", err)
 	}
 }

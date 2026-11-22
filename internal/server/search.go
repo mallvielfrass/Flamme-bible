@@ -28,14 +28,29 @@ func (s *Server) searchSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if q == "" || utf8.RuneCountInString(q) > 200 {
+	if utf8.RuneCountInString(q) > 200 {
+		writeMapped(w, errRequest)
+		return
+	}
+	book, dim, section, err := songSearchScope(r)
+	if err != nil {
+		writeMapped(w, err)
+		return
+	}
+	// Пустой запрос допустим только со сборником: тогда это список его песен.
+	if q == "" && book == nil {
 		writeMapped(w, errRequest)
 		return
 	}
 	limit := 20
+	maxLimit := 100
+	if q == "" {
+		limit = 500
+		maxLimit = 1000
+	}
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 || n > 100 {
+		if err != nil || n < 1 || n > maxLimit {
 			writeMapped(w, errRequest)
 			return
 		}
@@ -49,11 +64,6 @@ func (s *Server) searchSongs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		offset = n
-	}
-	book, dim, section, err := songSearchScope(r)
-	if err != nil {
-		writeMapped(w, err)
-		return
 	}
 	hits, err := s.findSongs(r.Context(), p.UserID, q, book, dim, section, limit, offset)
 	if err != nil {
@@ -75,7 +85,8 @@ func (s *Server) findSongs(ctx context.Context, userID, q string, book, dim, sec
 		WHERE `+songAccessWhere("$2", "$3", "$4")+`
 		  `+sectionWhere("$7")+`
 		  AND (
-		        s.title ILIKE $1 ESCAPE '\'
+		        $1::text IS NULL
+		        OR s.title ILIKE $1 ESCAPE '\'
 		        OR s.alt_title ILIKE $1 ESCAPE '\'
 		        OR EXISTS (
 		            SELECT 1
@@ -85,7 +96,7 @@ func (s *Server) findSongs(ctx context.Context, userID, q string, book, dim, sec
 		      )
 		ORDER BY s.title, s.songbook_id, s.fbid
 		LIMIT $5 OFFSET $6
-	`, likeContains(q), book, dim, userID, limit, offset, section)
+	`, likePattern(q), book, dim, userID, limit, offset, section)
 	if err != nil {
 		return nil, err
 	}
@@ -194,6 +205,13 @@ func songSearchScope(r *http.Request) (book any, dim any, section any, err error
 		section = raw
 	}
 	return book, dim, section, nil
+}
+
+func likePattern(q string) any {
+	if strings.TrimSpace(q) == "" {
+		return nil
+	}
+	return likeContains(q)
 }
 
 func likeContains(q string) string {
