@@ -81,6 +81,34 @@ export interface PlanItem {
   book: number;
   chapter: number;
   verse: number;
+  id?: string;
+  position?: number;
+}
+
+export interface RemotePlan {
+  id: string;
+  owner_user_id?: string;
+  dimension_id?: string;
+  title: string;
+  version: number;
+  updated_at: string;
+  deleted: boolean;
+  items: PlanItem[];
+}
+
+export interface PlanPull {
+  changed: boolean;
+  version: number;
+  updated_at: string;
+  plan?: RemotePlan;
+}
+
+export interface PlanLink {
+  path: string;
+  server_id: string;
+  dimension_id: string;
+  version: number;
+  updated_at: string;
 }
 
 export interface Progress {
@@ -128,6 +156,20 @@ export const api = {
   start: (songs: SongDecision[], plans: PlanDecision[]) =>
     invoke<{ notes: string[]; backups: string[] }>("start_sync", { request: { songs, plans } }),
   createPlan: (name: string, items: PlanItem[]) => invoke<Scan["plans"][number]>("create_plan", { name, items }),
+  listPlans: () => invoke<RemotePlan[]>("list_plans"),
+  planLinks: () => invoke<PlanLink[]>("plan_links"),
+  readPlanFile: (path: string) => invoke<string>("read_plan_file", { path }),
+  importPlan: (format: string, payload: string, title: string, dimension_id: string) =>
+    invoke<RemotePlan>("import_plan", { format, payload, title, dimension_id }),
+  exportPlan: (id: string, format: string) => invoke<string>("export_plan", { id, format }),
+  renderPlanExport: (format: string, title: string, items: PlanItem[]) =>
+    invoke<string>("render_plan_export", { format, title, items }),
+  writePlanExport: (path: string, contents: string) => invoke<void>("write_plan_export", { path, contents }),
+  deletePlan: (id: string, version: number) => invoke<RemotePlan>("delete_plan", { id, version }),
+  deleteLocalPlan: (path: string) => invoke<Scan>("delete_local_plan", { path }),
+  pullPlan: (id: string, version: number, updated_at: string) =>
+    invoke<PlanPull>("pull_plan", { id, version, updated_at }),
+  storePulledPlan: (plan: RemotePlan) => invoke<Scan>("store_pulled_plan", { plan }),
   searchSongs: (query: string) => invoke<SongHit[]>("search_songs", { query }),
   checkUpdate: () => invoke<UpdateView>("check_update"),
   downloadUpdate: () => invoke<string>("download_update"),
