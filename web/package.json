@@ -10,6 +10,7 @@
     "lint": "find src -name '*.js' -print0 | xargs -0 -n1 node --check"
   },
   "dependencies": {
+    "markdown-it": "14.1.0",
     "pinia": "4.1.0",
     "vue": "3.5.45",
     "vue-router": "5.5.0"

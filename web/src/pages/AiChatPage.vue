@@ -1,13 +1,31 @@
+<script setup>
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { apiURL } from '../api'
+import { createAiApi } from '../aiApi'
+import { useSessionStore } from '../stores/session'
+import { useAiStore } from '../stores/ai'
+import AiWorkspace from '../components/ai/AiWorkspace.vue'
+
+const route = useRoute()
+const router = useRouter()
+const session = useSessionStore()
+const ai = useAiStore()
+
+ai.useApi(createAiApi({
+  baseUrl: '',
+  getAuth: () => session.token,
+  fetch: (path, init) => fetch(apiURL(path), init),
+}))
+
+const chatId = computed(() => String(route.params.id || ''))
+const emit = defineEmits(['open-ai-settings'])
+
+function openChat(id) {
+  router.push(id ? `/ai/${id}` : '/ai')
+}
+</script>
+
 <template>
-  <h1>AI Чат</h1>
-  <p class="hint">Скоро. Чат пока в разработке.</p>
-  <section class="card">
-    <h2>Наши планы по ИИ</h2>
-    <ul>
-      <li>Смысловой поиск песен и мест Библии по смыслу, а не только по словам. Работает на сервере, без сторонних сервисов, пока только для русского языка. (уже есть)</li>
-      <li>Автодобавление песен из текста или фото: ИИ разбирает куплеты и припев и создаёт черновик, человек проверяет и сохраняет.</li>
-      <li>Импорт песен с популярных христианских сайтов только в личные сборники, а не в общий каталог (из-за авторских прав).</li>
-      <li>AI Чат: помощник для подготовки служения. Подробности появятся позже.</li>
-    </ul>
-  </section>
+  <AiWorkspace :chat-id="chatId" @open-chat="openChat" @open-settings="emit('open-ai-settings')" />
 </template>

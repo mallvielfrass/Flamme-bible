@@ -8,6 +8,7 @@ import ConfirmDialog from '../ConfirmDialog.vue'
 import DataTable from '../DataTable.vue'
 import IconButton from '../IconButton.vue'
 import StatusBadge from '../StatusBadge.vue'
+import AiAdmin from './AiAdmin.vue'
 import EmbedQueue from './EmbedQueue.vue'
 
 const session = useSessionStore()
@@ -288,6 +289,7 @@ watch([status, kind], reload)
 
 <template>
   <EmbedQueue v-if="session.role === 'admin'" />
+  <AiAdmin v-if="session.role === 'admin'" />
   <div class="admin-tools">
     <label class="search">Поиск
       <input v-model="q" type="search" placeholder="Название, короткое имя, почта" @change="reload" />

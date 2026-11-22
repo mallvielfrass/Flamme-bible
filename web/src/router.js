@@ -23,6 +23,7 @@ export const router = createRouter({
     { path: '/songbooks', component: SongbooksPage },
     { path: '/plans', component: PlansPage },
     { path: '/ai', component: AiChatPage },
+    { path: '/ai/:id', component: AiChatPage },
     { path: '/communities', component: SpacePage },
     { path: '/admin', redirect: '/admin/songbooks' },
     {

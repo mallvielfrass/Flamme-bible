@@ -21,7 +21,7 @@ function on(name) {
   const path = route.path
   if (name === 'songs') return path === '/songbooks' || path === '/catalog'
   if (name === 'plans') return path === '/plans'
-  if (name === 'ai') return path === '/ai'
+  if (name === 'ai') return path === '/ai' || path.startsWith('/ai/')
   if (name === 'spaces') return path === '/communities' || path.startsWith('/dimensions/')
   if (name === 'download') return path === '/download'
   if (name === 'admin') return path.startsWith('/admin')
@@ -57,8 +57,10 @@ async function logout() {
       </div>
     </nav>
   </header>
-  <main :class="{ 'auth-main': authScreen }">
-    <router-view />
+  <main :class="{ 'auth-main': authScreen, 'chat-main': on('ai') }">
+    <router-view v-slot="{ Component }">
+      <component :is="Component" @open-ai-settings="aiOpen = true" />
+    </router-view>
   </main>
   <AiSettingsModal v-if="aiOpen" @close="aiOpen = false" />
 </template>
