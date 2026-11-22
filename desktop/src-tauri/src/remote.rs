@@ -697,6 +697,7 @@ pub fn parse_failure(status: u16, text: &str) -> RemoteError {
             401 => "Нужно войти ещё раз".into(),
             403 => "Недостаточно прав".into(),
             404 => "На сервере это не найдено".into(),
+            413 => "Сервер не принял файл: он больше лимита".into(),
             _ => "Сервер не принял запрос".into(),
         });
     RemoteError::Message(message)
@@ -769,6 +770,15 @@ mod tests {
             }
             other => panic!("{other}"),
         }
+    }
+
+    #[test]
+    fn nginx_html_413_names_the_size_limit() {
+        let text = "<html><head><title>413 Request Entity Too Large</title></head></html>";
+        assert_eq!(
+            parse_failure(413, text).to_string(),
+            "Сервер не принял файл: он больше лимита"
+        );
     }
 
     #[test]
