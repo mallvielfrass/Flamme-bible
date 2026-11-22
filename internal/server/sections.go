@@ -241,6 +241,10 @@ func (s *Server) createSection(w http.ResponseWriter, r *http.Request) {
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO songbook_sections (id, songbook_id, title, position) VALUES ($1, $2, $3, $4)
 	`, id, bookID, strings.TrimSpace(body.Title), position); err != nil {
+		if uniqueViolation(err) {
+			writeJSON(w, http.StatusConflict, errJSON("раздел"))
+			return
+		}
 		writeMapped(w, err)
 		return
 	}
@@ -287,6 +291,10 @@ func (s *Server) renameSection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := tx.Exec(ctx, `UPDATE songbook_sections SET title = $2 WHERE id = $1`, sectionID, strings.TrimSpace(body.Title)); err != nil {
+		if uniqueViolation(err) {
+			writeJSON(w, http.StatusConflict, errJSON("раздел"))
+			return
+		}
 		writeMapped(w, err)
 		return
 	}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionLabel, adoptionKey, bannerText, canStart, conflictRows, countPhrase, decisionsFrom, foundLine, freshChipText, groupRows, hasUnsyncedChanges, planKey, songKey, syncCounts, syncReady, syncScreen, type PreviewData, type PreviewPlan, type PreviewSong } from "./syncState";
+import { actionLabel, adoptionKey, bannerText, canStart, conflictRows, countPhrase, decisionsFrom, foundLine, freshChipText, groupKey, groupRows, hasUnsyncedChanges, planKey, songKey, syncCounts, syncReady, syncScreen, type PreviewData, type PreviewPlan, type PreviewSong } from "./syncState";
 
 describe("sync screen state", () => {
   it("groups uploads, downloads and conflicts without showing raw codes", () => {
@@ -56,7 +56,21 @@ describe("sync screen state", () => {
     expect(decisionsFrom(chosen, songs, plans)).toEqual({
       songs: [{ book_path: "a.vbm", fbid: "s1", choice: "take_server", title: "", lyrics: "" }],
       plans: [{ key: "plan-1", choice: "keep_local" }],
+      groups: [],
     });
+  });
+
+  it("asks for a group name only when both sides renamed it, then sends the choice", () => {
+    const group = { book_path: "pv.vbm", book_title: "Песнь Возрождения", section_id: "sec", name: "Хор", action: "conflict", local_name: "Хор А", remote_name: "Хор Б" };
+    const data = preview({ groups: [group, { ...group, section_id: "sec2", action: "push_update" }] });
+    expect(syncCounts(data)).toMatchObject({ conflicts: 1, send: 1 });
+    const open = syncScreen(data, {}, {}, []);
+    expect(open.ready).toBe(false);
+    expect(open.books[0]).toMatchObject({ mode: "name", kind: "group", serverId: "sec", conflictId: "pv.vbm" });
+    expect(open.banner).toContain("Группу «Хор А»");
+    const chosen = { [groupKey("pv.vbm", "sec")]: { kind: "take_server" as const } };
+    expect(syncScreen(data, chosen, {}, []).ready).toBe(true);
+    expect(decisionsFrom(chosen, [], [], data.groups).groups).toEqual([{ book_path: "pv.vbm", section_id: "sec", choice: "take_server" }]);
   });
 
   it("flags preview rows that are not yet the same in the folder", () => {
@@ -104,7 +118,7 @@ function plan(patch: Partial<PreviewPlan> & Pick<PreviewPlan, "key" | "action">)
 }
 
 function preview(patch: Partial<PreviewData> = {}): PreviewData {
-  return { songs: [], plans: [], grouped: [], skipped: [], ...patch };
+  return { songs: [], plans: [], groups: [], skipped: [], ...patch };
 }
 
 describe("sync list", () => {
@@ -122,7 +136,6 @@ describe("sync list", () => {
         plan({ key: "youth", name: "Молодёжка 22.11", action: "push_update" }),
         plan({ key: "same", action: "unchanged" }),
       ],
-      grouped: [{ title: "Детские песни", note: "Группы в .vbm, пока не перезаписывается." }],
       skipped: [{ kind: "songbook", id: "book-skip", title: "Старый" }],
     });
     const visible = {
@@ -135,7 +148,7 @@ describe("sync list", () => {
       freshBooks: 1,
       freshPlans: 0,
       conflicts: 0,
-      skipped: 2,
+      skipped: 1,
       unchanged: 2,
     });
     expect(freshChipText(1, 0)).toBe("1 новый сборник");
@@ -151,14 +164,12 @@ describe("sync list", () => {
     expect(text).not.toContain("Песнь Возрождения");
     expect(text).not.toContain("Молодёжка");
     expect(text).not.toContain("Старый");
-    expect(text).not.toContain("Детские");
     expect(bannerText(preview({ songs: [song({ book_path: "a.vbm", book_title: "Песнь Возрождения", action: "push_update" })] }), {})).toContain("Песнь Возрождения");
     const screen = syncScreen(data, {}, {}, [{ short_name: "RST+", name: "Синодальный" }], { songbooks: ["book-skip"], plans: [] });
-    expect(screen.books.map((row) => row.title)).toEqual(["Песнь Возрождения", "Молодёжный сборник", "Детские песни"]);
+    expect(screen.books.map((row) => row.title)).toEqual(["Песнь Возрождения", "Молодёжный сборник"]);
     expect(screen.books[0].meta).toBe("2 песни отправятся на сервер · 3 песни в файле");
     expect(screen.books[0].status).toBe("Изменено здесь");
     expect(screen.books[1].mode).toBe("adopt");
-    expect(screen.books[2].status).toBe("Пропущен");
     expect(screen.plans.map((row) => row.status)).toEqual(["Изменено на сервере", "Изменено в VisioBible"]);
     expect(screen.ready).toBe(false);
     expect(screen.hint).toBe("Сначала выберите: добавить новый сборник в папку или пропустить его.");

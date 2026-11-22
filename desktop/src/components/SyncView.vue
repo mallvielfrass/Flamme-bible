@@ -22,6 +22,7 @@ const emit = defineEmits<{
   start: [];
   openConflict: [SongRow];
   resolvePlan: [string, "keep_local" | "take_server" | "keep_both"];
+  resolveGroup: [bookPath: string, sectionId: string, choice: "keep_local" | "take_server"];
   adopt: [kind: "songbook" | "plan", id: string];
   skip: [kind: "songbook" | "plan", id: string];
   restore: [kind: "songbook" | "plan", id: string];
@@ -99,6 +100,10 @@ function restore(kind: string, id: string) {
               <span class="action" :class="row.tone">{{ row.status }}</span>
               <div class="entity-actions">
                 <button v-if="row.mode === 'compare'" class="btn slim" type="button" @click="openConflict(row)">Сравнить</button>
+                <template v-else-if="row.mode === 'name'">
+                  <button class="btn slim" type="button" @click="emit('resolveGroup', row.conflictId, row.serverId, 'keep_local')">Оставить моё название</button>
+                  <button class="btn slim" type="button" @click="emit('resolveGroup', row.conflictId, row.serverId, 'take_server')">Взять с сервера</button>
+                </template>
                 <template v-else-if="row.mode === 'adopt'">
                   <button class="btn slim primary" type="button" @click="act('adopt', row)">Добавить в Modules</button>
                   <button class="btn slim" type="button" @click="act('skip', row)">Пропустить</button>
