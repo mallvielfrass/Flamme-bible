@@ -15,3 +15,6 @@ CREATE TABLE IF NOT EXISTS songbook_section_songs (
 );
 
 CREATE INDEX IF NOT EXISTS section_songs_song_idx ON songbook_section_songs (songbook_id, fbid);
+
+CREATE UNIQUE INDEX IF NOT EXISTS songbook_sections_title_idx
+  ON songbook_sections (songbook_id, title);
