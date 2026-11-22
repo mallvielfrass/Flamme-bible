@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { apiForm, explain } from '../../api'
 import { releaseVersionOk } from '../../checks'
 import { useSessionStore } from '../../stores/session'
-import AppModal from '../AppModal.vue'
+import AppModal from '../../../shared/components/AppModal.vue'
 
 const props = defineProps({
   version: { type: String, default: '' },

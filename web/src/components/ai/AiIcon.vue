@@ -1,5 +1,5 @@
 <script setup>
-import { icons } from '../icons'
+import { icons } from '../../../shared/icons.js'
 
 defineProps({
   name: { type: String, required: true },

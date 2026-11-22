@@ -1,0 +1,14 @@
+:root {
+  --paper: #f3efe6;
+  --card: #fbfaf6;
+  --ink: #1b2744;
+  --navy: #1a2744;
+  --gold: #b08948;
+  --gold-strong: #c6a15a;
+  --line: #e0d4c0;
+  --danger: #8a1f1f;
+  --muted: #6d6458;
+  --shadow: 0 16px 40px rgba(70, 48, 16, 0.06);
+  --serif: "Iowan Old Style", Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}

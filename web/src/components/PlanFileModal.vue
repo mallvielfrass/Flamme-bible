@@ -10,7 +10,7 @@ import {
   planEncodingLabel,
   planFormatLabel,
 } from '../planItems'
-import AppModal from './AppModal.vue'
+import AppModal from '../../shared/components/AppModal.vue'
 
 const props = defineProps({
   mode: { type: String, default: 'import' },

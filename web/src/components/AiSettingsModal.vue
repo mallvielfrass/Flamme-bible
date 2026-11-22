@@ -2,8 +2,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { api, explain } from '../api'
 import { useSessionStore } from '../stores/session'
-import AppModal from './AppModal.vue'
-import ConfirmDialog from './ConfirmDialog.vue'
+import AppModal from '../../shared/components/AppModal.vue'
+import ConfirmDialog from '../../shared/components/ConfirmDialog.vue'
 
 const emit = defineEmits(['close'])
 const session = useSessionStore()

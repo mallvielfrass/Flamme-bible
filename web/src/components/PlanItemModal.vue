@@ -3,7 +3,7 @@ import { reactive, ref, watch } from 'vue'
 import BibleSearch from './BibleSearch.vue'
 import SongSearch from './SongSearch.vue'
 import SongbookPicker from './SongbookPicker.vue'
-import AppModal from './AppModal.vue'
+import AppModal from '../../shared/components/AppModal.vue'
 import { bibleItem, itemTitle, songItem, textItem } from '../planItems'
 
 const props = defineProps({

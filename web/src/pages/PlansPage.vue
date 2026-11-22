@@ -13,12 +13,12 @@ import {
   pointsLabel,
 } from '../planItems'
 import { useSessionStore } from '../stores/session'
-import ConfirmDialog from '../components/ConfirmDialog.vue'
+import ConfirmDialog from '../../shared/components/ConfirmDialog.vue'
 import PlanCard from '../components/PlanCard.vue'
 import PlanDownloadModal from '../components/PlanDownloadModal.vue'
 import PlanFileModal from '../components/PlanFileModal.vue'
 import PlanItemModal from '../components/PlanItemModal.vue'
-import SpaceFilter from '../components/SpaceFilter.vue'
+import SpaceFilter from '../../shared/components/SpaceFilter.vue'
 
 const session = useSessionStore()
 const route = useRoute()
