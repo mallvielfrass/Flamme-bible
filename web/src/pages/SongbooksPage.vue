@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, provide, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSessionStore } from '../stores/session'
 import SongSearch from '../components/SongSearch.vue'
@@ -7,9 +7,12 @@ import SongbookManager from '../components/SongbookManager.vue'
 import ModuleManager from '../components/ModuleManager.vue'
 import PublicCatalog from '../components/PublicCatalog.vue'
 import SpaceFilter from '../../shared/components/SpaceFilter.vue'
+import { aiPlanKey } from '../../shared/ai/results.js'
+import { sitePlanTarget } from '../sitePlan.js'
 
 const route = useRoute()
 const session = useSessionStore()
+provide(aiPlanKey, sitePlanTarget(session))
 const tab = ref(route.meta.catalog ? 'catalog' : 'search')
 const wantCommunity = ref(false)
 
