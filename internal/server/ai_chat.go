@@ -619,14 +619,14 @@ func (s *Server) postAIMessage(w http.ResponseWriter, r *http.Request) {
 	_ = send("done", map[string]any{"message_id": assistantID, "stopped": stopped})
 }
 
-// chatTools — инструменты чтения для модели с отметкой «tools». Каждый вызов
+// chatTools — инструменты чтения и правки планов для модели с отметкой «tools». Каждый вызов
 // показывается в интерфейсе событиями tool_start и tool_result.
 func (s *Server) chatTools(userID string, model chatModel, settings aiSettings, send func(string, any) error, cards *[]aiCard) agent.Tools {
 	if !model.CanTools {
 		return agent.Tools{}
 	}
 	return agent.Tools{
-		List:     aiTools,
+		List:     chatToolList,
 		MaxCalls: settings.MaxToolCalls,
 		Run: func(ctx context.Context, call provider.ToolCall) string {
 			var args any

@@ -75,7 +75,7 @@ func TestAIChatTools(t *testing.T) {
 			t.Fatalf("нет схемы у %v", fn["name"])
 		}
 	}
-	if strings.Join(names, ",") != "search_songs,get_song,list_songbooks,search_bible,list_plans,get_plan" || bodies[0]["tool_choice"] != "auto" {
+	if strings.Join(names, ",") != "search_songs,get_song,list_songbooks,search_bible,list_plans,get_plan,create_plan,add_to_plan,remove_from_plan,move_plan_item,rename_plan" || bodies[0]["tool_choice"] != "auto" {
 		t.Fatalf("инструменты %v, tool_choice %v", names, bodies[0]["tool_choice"])
 	}
 	msgs := bodies[1]["messages"].([]any)
