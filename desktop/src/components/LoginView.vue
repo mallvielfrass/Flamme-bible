@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import PasswordInput from "../../../web/shared/components/PasswordInput.vue";
 
 const props = defineProps<{ serverUrl: string; email: string; error: string; busy: boolean }>();
 const emit = defineEmits<{
@@ -36,7 +37,7 @@ function submit() {
           <input v-model="email" name="email" type="email" autocomplete="username" />
         </label>
         <label>Пароль
-          <input v-model="password" name="password" type="password" :autocomplete="mode === 'register' ? 'new-password' : 'current-password'" />
+          <PasswordInput v-model="password" name="password" :autocomplete="mode === 'register' ? 'new-password' : 'current-password'" />
         </label>
         <button class="btn primary" type="submit" :disabled="busy">
           {{ mode === "register" ? "Создать учётную запись" : "Войти" }}
