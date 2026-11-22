@@ -374,6 +374,9 @@ func (s *Server) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func deleteUserGraph(ctx context.Context, tx pgx.Tx, userID string) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM ai_chats WHERE user_id = $1`, userID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM ai_task_models WHERE user_id = $1`, userID); err != nil {
 		return err
 	}

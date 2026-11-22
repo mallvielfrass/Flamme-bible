@@ -215,11 +215,12 @@ func SafeClient() *http.Client {
 	return &http.Client{
 		CheckRedirect: refuseRedirect,
 		Transport: &http.Transport{
-			Proxy:                 nil,
-			DialContext:           dialer.DialContext,
-			ForceAttemptHTTP2:     true,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: 10 * time.Second,
+			Proxy:               nil,
+			DialContext:         dialer.DialContext,
+			ForceAttemptHTTP2:   true,
+			TLSHandshakeTimeout: 10 * time.Second,
+			// Чат ждёт первый байт до минуты. Список моделей обрывается своим контекстом раньше.
+			ResponseHeaderTimeout: 60 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 		},
 	}

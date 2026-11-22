@@ -57,3 +57,49 @@ func (l *ipLimiter) allow(ip, path string, now time.Time) bool {
 	l.hits[key] = append(kept, now)
 	return true
 }
+
+// userLimiter считает сообщения чата одного пользователя.
+// Ноль в пределе значит «без ограничения» и такие попадания не копятся.
+type userLimiter struct {
+	mu   sync.Mutex
+	hits map[string][]time.Time
+}
+
+func newUserLimiter() *userLimiter {
+	return &userLimiter{hits: map[string][]time.Time{}}
+}
+
+func (l *userLimiter) allow(userID string, per10, perDay int, now time.Time) bool {
+	if l == nil || (per10 <= 0 && perDay <= 0) {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	cutoff := now.Add(-24 * time.Hour)
+	prev := l.hits[userID]
+	kept := prev[:0]
+	for _, ts := range prev {
+		if ts.After(cutoff) {
+			kept = append(kept, ts)
+		}
+	}
+	if perDay > 0 && len(kept) >= perDay {
+		l.hits[userID] = kept
+		return false
+	}
+	if per10 > 0 {
+		recent := now.Add(-10 * time.Minute)
+		n := 0
+		for _, ts := range kept {
+			if ts.After(recent) {
+				n++
+			}
+		}
+		if n >= per10 {
+			l.hits[userID] = kept
+			return false
+		}
+	}
+	l.hits[userID] = append(kept, now)
+	return true
+}

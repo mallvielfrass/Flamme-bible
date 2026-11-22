@@ -38,6 +38,10 @@ var (
 	errSemanticOff  = errors.New("смысловой поиск недоступен")
 	errAIDisabled   = errors.New("ИИ не настроен")
 	errAIName       = errors.New("имя")
+	errAIOff        = errors.New("Чат ИИ выключен")
+	errAIBusy       = errors.New("Ответ ещё пишется")
+	errAILimit      = errors.New("Слишком много сообщений")
+	errAIModel      = errors.New("Не выбрана модель")
 )
 
 type Server struct {
@@ -61,6 +65,8 @@ type Server struct {
 	aiKey         []byte
 	aiHTTP        *http.Client
 	aiResolve     netguard.Resolver
+	aiRuns        *chatHub
+	aiMsgs        *userLimiter
 }
 
 type principal struct {
@@ -75,6 +81,8 @@ func New(db *pgxpool.Pool) *Server {
 		sessionTTL: defaultSessionTTL,
 		authLimit:  newAuthLimiter(),
 		aiHTTP:     netguard.SafeClient(),
+		aiRuns:     newChatHub(),
+		aiMsgs:     newUserLimiter(),
 	}
 	if key, err := secret.LoadKey(); err == nil {
 		s.aiKey = key
@@ -241,6 +249,14 @@ func writeMapped(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusServiceUnavailable, errJSON("ИИ не настроен"))
 	case errors.Is(err, errAIName):
 		writeJSON(w, http.StatusConflict, errJSON("имя"))
+	case errors.Is(err, errAIOff):
+		writeJSON(w, http.StatusServiceUnavailable, errJSON("Чат ИИ выключен"))
+	case errors.Is(err, errAIBusy):
+		writeJSON(w, http.StatusConflict, errJSON("Ответ ещё пишется"))
+	case errors.Is(err, errAILimit):
+		writeJSON(w, http.StatusTooManyRequests, errJSON("Слишком много сообщений"))
+	case errors.Is(err, errAIModel):
+		writeJSON(w, http.StatusBadRequest, errJSON("Не выбрана модель"))
 	case errors.Is(err, errUnmappable):
 		writeJSON(w, http.StatusBadRequest, errJSON("в тексте есть символы, которых нет в windows-1251"))
 	default:

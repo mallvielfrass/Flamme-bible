@@ -38,7 +38,7 @@ func reset(t *testing.T) {
 	t.Helper()
 	_, err := testPool.Exec(context.Background(), `
 		DROP TABLE IF EXISTS song_embeddings_next, bible_passages_next, song_embeddings_prev, bible_passages_prev;
-		TRUNCATE ai_task_models, ai_models, ai_providers,
+		TRUNCATE ai_messages, ai_chats, ai_task_models, ai_models, ai_providers,
 		         admin_audit, embedding_jobs, bible_passages, module_verses, song_embeddings,
 		         plan_items, plans, modules, client_releases, app_settings,
 		         song_hides, conflicts, operation_results, change_log, song_order,
