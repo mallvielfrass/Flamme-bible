@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import AppModal from "../../../web/shared/components/AppModal.vue";
+import IconButton from "../../../web/shared/components/IconButton.vue";
 import {
   itemTitle,
   makeBible,
@@ -200,19 +201,19 @@ function find() {
         <label class="grow">Найти песню
           <input v-model="query" name="q" type="search" placeholder="Название или строчка" />
         </label>
-        <label>Сборник
+        <label class="pick">Сборник
           <select v-model="songbookId" @change="onBook">
             <option value="">Все сборники</option>
             <option v-for="book in books" :key="book.id" :value="book.id">{{ book.title || book.short_name }}</option>
           </select>
         </label>
-        <label>Раздел
+        <label class="pick">Раздел
           <select v-model="sectionId" :disabled="!songbookId">
             <option value="">Все разделы</option>
             <option v-for="section in sections" :key="section.id" :value="section.id">{{ section.title }}</option>
           </select>
         </label>
-        <button class="btn slim" type="submit" :disabled="searching">Найти</button>
+        <IconButton icon="search" label="Найти" :disabled="searching" @click="find" />
       </form>
       <p v-if="filterLabel" class="hint">Фильтр: {{ filterLabel }}</p>
       <p v-if="searching" class="empty" role="status">Загрузка…</p>

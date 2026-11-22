@@ -252,8 +252,16 @@
   pointer-events: none;
 }
 
-.plans-page .search-bar { display: flex; gap: 0.45rem; align-items: end; flex-wrap: wrap; }
-.plans-page .search-bar .grow { flex: 1; min-width: 12rem; margin: 0; }
+.plans-page .search-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.45rem 0.5rem;
+}
+.plans-page .search-bar label { margin: 0; min-width: 0; }
+.plans-page .search-bar .grow { flex: 1 1 8.5rem; }
+.plans-page .search-bar .pick { flex: 1.15 1 10rem; }
+.plans-page .search-bar .icon-btn { flex: 0 0 auto; margin-bottom: 0.12rem; }
 .plans-page .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.7rem; }
 .plans-page .wide { grid-column: 1 / -1; }
 .plans-page label { font-family: var(--sans, system-ui, sans-serif); }
