@@ -1,5 +1,7 @@
 #!/bin/sh
-# Сборка клиента внутри образа. Каталог target после каждого шага удаляется.
+# Сборка клиента внутри образа. Каталог target по умолчанию лежит в томе кэша
+# (/cache/target), чтобы повторные сборки не компилировали библиотеки заново.
+# KEEP_TARGET=0 возвращает старое поведение: target удаляется после каждого шага.
 set -eu
 
 version=${CLIENT_VERSION:-}
@@ -41,7 +43,21 @@ rsync -a --delete \
 python3 /usr/local/bin/set_version.py /work "$version"
 
 export CARGO_HOME="${CARGO_HOME:-/cache/cargo}"
-export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/work/target}"
+keep_target=${KEEP_TARGET:-1}
+if [ "$keep_target" = "1" ]; then
+	export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/cache/target}"
+else
+	export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/work/target}"
+fi
+
+# С кэшем убираем только пакеты (сотни МБ), без кэша — весь target.
+drop_target() {
+	if [ "$keep_target" = "1" ]; then
+		rm -rf "$CARGO_TARGET_DIR/release/bundle"
+	else
+		rm -rf "$CARGO_TARGET_DIR"
+	fi
+}
 export XWIN_CACHE_DIR="${XWIN_CACHE_DIR:-/cache/xwin}"
 export npm_config_cache="${npm_config_cache:-/cache/npm}"
 export CARGO_INCREMENTAL=0
@@ -83,26 +99,24 @@ if [ "$linux_ok" -ne 1 ]; then
 		echo "внимание: вместо AppImage записан обычный исполняемый файл (на компьютере пользователя нужен webkit2gtk-4.1)" >&2
 	else
 		echo "не удалось собрать файл Linux" >&2
-		rm -rf "$CARGO_TARGET_DIR"
+		drop_target
 		exit 1
 	fi
 fi
 
-echo "удаляю target после Linux, чтобы не держать два каталога сборки"
-rm -rf "$CARGO_TARGET_DIR"
+drop_target
 
 echo "сборка Windows (переносимый exe через cargo-xwin)"
 npx tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle --config "$tauri_config"
 win=$CARGO_TARGET_DIR/x86_64-pc-windows-msvc/release/flammebible-desktop.exe
 if [ ! -f "$win" ]; then
 	echo "не найден $win" >&2
-	rm -rf "$CARGO_TARGET_DIR"
+	drop_target
 	exit 1
 fi
 cp -- "$win" /out/flammebible-windows.exe
 echo "Windows: exe $(wc -c < /out/flammebible-windows.exe) байт"
 
-echo "удаляю target"
-rm -rf "$CARGO_TARGET_DIR"
+drop_target
 chmod a+r /out/flammebible-linux /out/flammebible-windows.exe /out/linux-format.txt
 echo "готово: версия $version"
