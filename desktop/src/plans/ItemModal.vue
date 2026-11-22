@@ -220,7 +220,7 @@ function find() {
       <ul v-else-if="hits.length" class="results">
         <li v-for="hit in hits" :key="hit.songbook_id + hit.fbid">
           <div>
-            <b class="title-serif">{{ hit.title }}</b>
+            <b class="hit-title">{{ hit.title }}</b>
             <p class="hint">{{ [hit.songbook_title, hit.section_title].filter(Boolean).join(" · ") }}</p>
           </div>
           <button class="btn slim" type="button" @click="stage(hit)">Добавить</button>

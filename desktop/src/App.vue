@@ -225,17 +225,6 @@ async function start() {
   }
 }
 
-async function repairEncoding(path: string) {
-  error.value = "";
-  try {
-    scan.value = await api.repairPlanEncoding(path);
-    preview.value = null;
-    note("Кодировка плана исправлена. Файл записан в UTF-8.");
-  } catch (err) {
-    error.value = message(err);
-  }
-}
-
 async function checkUpdate() {
   updateBusy.value = true;
   updateError.value = "";
