@@ -62,12 +62,7 @@ function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-let booting: Promise<void> | null = null;
-
-function startBoot() {
-  booting ??= boot();
-  return booting;
-}
+let workspace: Promise<void> = Promise.resolve();
 
 async function boot() {
   if (import.meta.env.DEV && new URLSearchParams(location.search).has("updates-preview")) {
@@ -77,20 +72,32 @@ async function boot() {
   }
   try {
     settings.value = await api.loadSettings();
-    if (settings.value.visio_path) {
-      scan.value = await api.openVisio(settings.value.visio_path);
-    }
-    if (settings.value.logged_in) {
-      dimensions.value = await api.dimensions();
-      if (scan.value && !scan.value.needs_choice) await loadPreview(false);
-    }
     bibleLinks.value = await api.bibleLinks();
   } catch (err) {
-    const text = message(err);
-    if (settings.value.logged_in) error.value = text;
-    else authError.value = text;
+    authError.value = message(err);
   } finally {
     ready.value = true;
+  }
+  workspace = loadWorkspace();
+}
+
+// Папка и сверка с сервером грузятся уже при открытом окне: экран синхронизации пишет «Смотрим, что изменилось…».
+async function loadWorkspace() {
+  const loggedIn = settings.value.logged_in;
+  if (loggedIn) busy.value = "preview";
+  try {
+    const [opened, spaces] = await Promise.all([
+      settings.value.visio_path ? api.openVisio(settings.value.visio_path) : null,
+      loggedIn ? api.dimensions() : [],
+    ]);
+    scan.value = opened;
+    dimensions.value = spaces;
+    if (loggedIn && scan.value && !scan.value.needs_choice) await loadPreview(false);
+  } catch (err) {
+    if (loggedIn) error.value = message(err);
+    else authError.value = message(err);
+  } finally {
+    if (busy.value === "preview") busy.value = "";
   }
 }
 
@@ -105,6 +112,7 @@ async function enter(mode: "login" | "register", serverUrl: string, email: strin
     tab.value = "sync";
     dimensions.value = await api.dimensions();
     note(mode === "register" ? "Учётная запись создана." : "Вход выполнен.");
+    await workspace;
     if (scan.value && !scan.value.needs_choice) await loadPreview(true);
   } catch (err) {
     const text = message(err);
@@ -290,7 +298,7 @@ function closeAnyway() {
 }
 
 onMounted(() => {
-  void startBoot();
+  void boot();
   void listen<Progress>("sync-progress", (event) => {
     progress.value = event.payload;
   }).catch(() => undefined);
