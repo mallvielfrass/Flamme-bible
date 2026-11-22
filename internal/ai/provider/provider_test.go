@@ -128,7 +128,7 @@ func TestChatStream(t *testing.T) {
 		return http.DefaultTransport.RoundTrip(r)
 	})}
 	var got strings.Builder
-	usage, err := (&Client{BaseURL: srv.URL + "/v1", Token: token, HTTP: httpClient}).Chat(context.Background(), ChatRequest{
+	reply, err := (&Client{BaseURL: srv.URL + "/v1", Token: token, HTTP: httpClient}).Chat(context.Background(), ChatRequest{
 		Model: "chat-a",
 		Messages: []Message{
 			{Role: "user", Content: "привет"},
@@ -140,6 +140,7 @@ func TestChatStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	usage := reply.Usage
 	if !sawStream || sawTools || got.String() != "Привет" || !usage.Reported || usage.PromptTokens != 4 || usage.CompletionTokens != 2 {
 		t.Fatalf("поток %q usage %+v tools %v", got.String(), usage, sawTools)
 	}
@@ -217,5 +218,58 @@ func TestChatAnswerTimeout(t *testing.T) {
 	}
 	if got.String() != "а" {
 		t.Fatalf("кусок потерян %q", got.String())
+	}
+}
+
+// Инструменты должны уйти в запрос в формате OpenAI, а вызов из потока —
+// собраться из кусков по index (так шлют OpenAI, DeepSeek, Qwen и агрегаторы).
+func TestChatTools(t *testing.T) {
+	var body struct {
+		Tools []struct {
+			Type     string `json:"type"`
+			Function struct {
+				Name       string         `json:"name"`
+				Parameters map[string]any `json:"parameters"`
+			} `json:"function"`
+		} `json:"tools"`
+		ToolChoice string `json:"tool_choice"`
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"search_songs","arguments":""}}]}}]}`+"\n\n")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"query\":"}}]}}]}`+"\n\n")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"благодать\"}"}}]}}]}`+"\n\n")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_2","type":"function","function":{"name":"list_plans","arguments":"{}"}}]}}]}`+"\n\n")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	reply, err := (&Client{BaseURL: srv.URL + "/v1", Token: "sk-test-token-1234", HTTP: srv.Client()}).Chat(context.Background(), ChatRequest{
+		Model:    "chat-a",
+		Messages: []Message{{Role: "user", Content: "найди песню"}},
+		Tools: []Tool{{Type: "function", Function: ToolFunction{
+			Name: "search_songs", Description: "поиск",
+			Parameters: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}}}`),
+		}}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Tools) != 1 || body.Tools[0].Type != "function" || body.Tools[0].Function.Name != "search_songs" ||
+		body.Tools[0].Function.Parameters["type"] != "object" || body.ToolChoice != "auto" {
+		t.Fatalf("инструменты в запросе %+v", body)
+	}
+	if len(reply.ToolCalls) != 2 {
+		t.Fatalf("вызовы %+v", reply.ToolCalls)
+	}
+	first, second := reply.ToolCalls[0], reply.ToolCalls[1]
+	if first.ID != "call_1" || first.Function.Name != "search_songs" || first.Function.Arguments != `{"query":"благодать"}` {
+		t.Fatalf("первый вызов %+v", first)
+	}
+	if second.ID != "call_2" || second.Function.Name != "list_plans" || second.Function.Arguments != "{}" {
+		t.Fatalf("второй вызов %+v", second)
 	}
 }
