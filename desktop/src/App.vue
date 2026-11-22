@@ -2,11 +2,12 @@
 import { computed, onMounted, ref } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import BibleModulesPanel from "./components/BibleModulesPanel.vue";
 import ConflictModal from "./components/ConflictModal.vue";
 import PlansView from "./components/PlansView.vue";
 import SyncView from "./components/SyncView.vue";
 import UpdatesView from "./components/UpdatesView.vue";
-import { api, type Dimension, type PlanItem, type Preview, type Progress, type Scan, type Settings, type SongHit, type SongRow, type UpdateView } from "./commands";
+import { api, type BibleLink, type Dimension, type PlanItem, type Preview, type Progress, type Scan, type Settings, type SongHit, type SongRow, type UpdateView } from "./commands";
 import { canStart, conflictRows, decisionsFrom, planKey, songKey, type Choice } from "./syncState";
 
 const tab = ref<"sync" | "plans" | "updates">("sync");
@@ -37,6 +38,9 @@ const updateInfo = ref<UpdateView | null>(null);
 const updateError = ref("");
 const updateBusy = ref(false);
 const savedPath = ref("");
+const bibleLinks = ref<BibleLink[]>([]);
+const bibleBusy = ref(false);
+const bibleError = ref("");
 
 const chosenRows = computed(() => conflictRows(preview.value?.songs ?? [], preview.value?.plans ?? []));
 
@@ -55,6 +59,7 @@ async function boot() {
     if (settings.value.logged_in) {
       dimensions.value = await api.dimensions();
     }
+    bibleLinks.value = await api.bibleLinks();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   }
@@ -181,6 +186,19 @@ async function search(query: string) {
   }
 }
 
+async function syncBibles() {
+  bibleBusy.value = true;
+  bibleError.value = "";
+  try {
+    bibleLinks.value = await api.syncBibleModules();
+    note("Модули Библии сверены с сервером.");
+  } catch (err) {
+    bibleError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    bibleBusy.value = false;
+  }
+}
+
 async function checkUpdate() {
   updateBusy.value = true;
   updateError.value = "";
@@ -223,8 +241,8 @@ onMounted(() => {
         <button class="tab" :class="{ active: tab === 'updates' }" type="button" @click="tab = 'updates'">Обновление</button>
       </nav>
     </header>
+    <template v-if="tab === 'sync'">
     <SyncView
-      v-if="tab === 'sync'"
       :settings="settings"
       :server-url="serverUrl"
       :email="email"
@@ -256,6 +274,15 @@ onMounted(() => {
       @repair="repairEncoding"
       @set-encoding="setPlanEncoding"
     />
+    <BibleModulesPanel
+      :bibles="scan?.bibles ?? []"
+      :links="bibleLinks"
+      :logged-in="settings.logged_in"
+      :busy="bibleBusy"
+      :error="bibleError"
+      @sync="syncBibles"
+    />
+    </template>
     <PlansView v-else-if="tab === 'plans'" :scan="scan" :hits="hits" :windows1251="settings.plan_windows1251" @create="createPlan" @search="search" @repair="repairEncoding" @set-encoding="setPlanEncoding" />
     <UpdatesView v-else :info="updateInfo" :error="updateError" :busy="updateBusy" :saved-path="savedPath" @check="checkUpdate" @download="downloadUpdate" />
     <ConflictModal

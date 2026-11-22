@@ -104,6 +104,15 @@ export interface SongHit {
   songbook_title: string;
 }
 
+export interface BibleLink {
+  path: string;
+  short_name: string;
+  title: string;
+  content_hash: string;
+  server_id: string;
+  uploaded: boolean;
+}
+
 export interface UpdateView {
   current: string;
   latest: string;
@@ -131,4 +140,6 @@ export const api = {
   searchSongs: (query: string) => invoke<SongHit[]>("search_songs", { query }),
   checkUpdate: () => invoke<UpdateView>("check_update"),
   downloadUpdate: () => invoke<string>("download_update"),
+  bibleLinks: () => invoke<BibleLink[]>("bible_module_links"),
+  syncBibleModules: () => invoke<BibleLink[]>("sync_bible_modules"),
 };
