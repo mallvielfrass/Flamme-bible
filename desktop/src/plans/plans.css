@@ -69,7 +69,7 @@
 .plans-page .banner.bad { color: var(--danger); border-color: #e2c1c1; background: #fff6f4; }
 .plans-page .banner.ok { border-color: #d7c39a; background: #fbf6ea; color: var(--ink); }
 
-.plans-page .space-filter { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.2rem 0 1rem; align-items: center; }
+.plans-page .space-filter { position: relative; z-index: 12; display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.2rem 0 1rem; align-items: center; }
 .plans-page .space-label { display: inline-block; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plans-page .split-tab {
   position: relative;
@@ -113,7 +113,7 @@
 
 .plans-page .menu {
   position: absolute;
-  z-index: 8;
+  z-index: 12;
   top: calc(100% + 0.3rem);
   left: 0;
   min-width: 16rem;
@@ -123,6 +123,7 @@
   padding: 0.3rem;
   list-style: none;
   background: #fff;
+  color: var(--ink);
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: var(--shadow);

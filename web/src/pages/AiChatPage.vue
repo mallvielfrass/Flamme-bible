@@ -1,8 +1,8 @@
 <script setup>
 import { computed, provide, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, apiURL } from '../api'
-import { planTarget } from '../planItems.js'
+import { apiURL } from '../api'
+import { sitePlanTarget } from '../sitePlan.js'
 import { aiPlanKey } from '../../shared/ai/results.js'
 import { createAiApi } from '../../shared/ai/aiApi.js'
 import { useSessionStore } from '../stores/session'
@@ -23,27 +23,7 @@ const client = createAiApi({
 })
 ai.useApi(client)
 
-provide(aiPlanKey, planTarget({
-  list: async () => {
-    const list = await api('/api/plans?scope=all', { token: session.token })
-    return Array.isArray(list) ? list : []
-  },
-  read: (id) => api(`/api/plans/${id}`, { token: session.token }),
-  save: (plan) => api(`/api/plans/${plan.id}`, {
-    method: 'PUT',
-    token: session.token,
-    body: { title: plan.title, version: plan.version, updated_at: plan.updated_at || undefined, items: plan.items },
-  }),
-  places: async () => session.spaces
-    .filter((space) => space.kind === 'community')
-    .map((space) => ({ id: space.id, name: space.name || 'Община' })),
-  defaultPlace: () => (session.current?.kind === 'community' ? session.current.id : ''),
-  create: (title, items, dimensionId) => api('/api/plans', {
-    method: 'POST',
-    token: session.token,
-    body: { title, dimension_id: dimensionId, items },
-  }),
-}))
+provide(aiPlanKey, sitePlanTarget(session))
 
 const chatId = computed(() => String(route.params.id || ''))
 

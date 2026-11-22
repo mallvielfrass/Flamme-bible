@@ -1,7 +1,11 @@
 <script setup>
-import { ref } from 'vue'
+import { inject, ref } from 'vue'
 import { api, explain } from '../api'
 import { statusText } from '../checks'
+import { songFromHit } from '../../shared/ai/songbooks.js'
+import { aiPlanKey } from '../../shared/ai/results.js'
+import AddToPlanModal from '../../shared/ai/AddToPlanModal.vue'
+import { songPanelId, useSongAccordion } from '../songAccordion.js'
 
 const props = defineProps({
   token: { type: String, default: '' },
@@ -19,6 +23,19 @@ const more = ref(false)
 const error = ref('')
 const loading = ref(false)
 const searched = ref(false)
+const planTarget = inject(aiPlanKey, null)
+const adding = ref(null)
+const added = ref({})
+
+const accordion = useSongAccordion(async (song) => {
+  const params = new URLSearchParams({ songbook_id: song.songbook_id, fbid: song.fbid })
+  try {
+    const data = await api(`/api/songs/text?${params}`, { token: props.token })
+    return data?.text || ''
+  } catch (err) {
+    throw new Error(explain(err))
+  }
+})
 
 function setMode(next) {
   if (mode.value === next) return
@@ -27,6 +44,7 @@ function setMode(next) {
   more.value = false
   searched.value = false
   error.value = ''
+  accordion.collapse()
 }
 
 async function run(nextOffset) {
@@ -75,7 +93,29 @@ async function run(nextOffset) {
 function search() {
   songs.value = []
   more.value = false
+  accordion.collapse()
   run(0)
+}
+
+function canAdd(song) {
+  return !props.picking && planTarget && songFromHit(song)
+}
+
+function openAdd(song) {
+  const item = songFromHit(song)
+  if (!item) return
+  item.body = accordion.textOf(song)
+  adding.value = { key: songKeyOrEmpty(song), item }
+}
+
+function songKeyOrEmpty(song) {
+  return `${song.songbook_id || ''}/${song.fbid || ''}`
+}
+
+function onAdded(title) {
+  const { key } = adding.value
+  added.value = { ...added.value, [key]: title ? `Добавлено в план «${title}».` : 'Добавлено в план.' }
+  adding.value = null
 }
 </script>
 
@@ -107,11 +147,32 @@ function search() {
   <ul v-else class="plain">
     <li v-for="(song, index) in songs" :key="`${song.songbook_id}-${song.fbid}-${index}`">
       <div class="card-head">
-        <strong class="title-serif">{{ song.title || 'Без названия' }}</strong>
+        <button
+          type="button"
+          class="song-toggle"
+          :aria-expanded="accordion.isOpen(song)"
+          :aria-controls="songPanelId(song)"
+          :disabled="!songPanelId(song)"
+          @click="accordion.toggle(song)"
+        >
+          <strong class="title-serif">{{ song.title || 'Без названия' }}</strong>
+        </button>
         <span class="badge" :class="song.status">{{ statusText(song.status) }}</span>
       </div>
       <p class="hint">{{ [song.songbook_title, song.section_title].filter(Boolean).join(' · ') || 'Сборник' }}</p>
-      <p v-if="song.fragment" class="quote">{{ song.fragment }}</p>
+      <p v-if="song.fragment && !accordion.isOpen(song)" class="quote">{{ song.fragment }}</p>
+      <div v-if="accordion.isOpen(song)" :id="songPanelId(song)" class="song-body">
+        <p v-if="added[songKeyOrEmpty(song)]" class="banner ok" role="status">{{ added[songKeyOrEmpty(song)] }}</p>
+        <p v-if="accordion.isLoading(song)" class="hint" role="status">Загрузка…</p>
+        <p v-else-if="accordion.errorOf(song)" class="banner bad" role="alert">{{ accordion.errorOf(song) }}</p>
+        <pre v-else-if="accordion.textOf(song)" class="lyric">{{ accordion.textOf(song) }}</pre>
+        <button
+          v-if="canAdd(song)"
+          class="btn slim"
+          type="button"
+          @click="openAdd(song)"
+        >В план</button>
+      </div>
       <button v-if="picking" class="btn slim" type="button" @click="emit('pick', song)">Добавить</button>
     </li>
   </ul>
@@ -122,4 +183,5 @@ function search() {
     :disabled="loading"
     @click="run(offset)"
   >Показать ещё</button>
+  <AddToPlanModal v-if="adding" :item="adding.item" @close="adding = null" @added="onAdded" />
 </template>

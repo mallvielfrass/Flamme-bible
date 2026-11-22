@@ -443,7 +443,7 @@ h1, h2, h3, .brand, .auth-brand, .space-name, .title-serif, .quote {
   font-size: 0.8rem;
 }
 
-.space-filter { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 1rem; align-items: center; }
+.space-filter { position: relative; z-index: 12; display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 1rem; align-items: center; }
 
 .space-label {
   display: inline-block;
@@ -483,7 +483,7 @@ h1, h2, h3, .brand, .auth-brand, .space-name, .title-serif, .quote {
 
 .menu {
   position: absolute;
-  z-index: 8;
+  z-index: 12;
   top: calc(100% + 0.3rem);
   left: 0;
   min-width: 16rem;
@@ -493,6 +493,7 @@ h1, h2, h3, .brand, .auth-brand, .space-name, .title-serif, .quote {
   padding: 0.3rem;
   list-style: none;
   background: #fff;
+  color: var(--ink);
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: var(--shadow);
@@ -556,6 +557,35 @@ h1, h2, h3, .brand, .auth-brand, .space-name, .title-serif, .quote {
 .order { list-style: decimal; padding-left: 1.4rem; }
 
 .quote { margin: 0.35rem 0; white-space: pre-wrap; }
+
+.song-toggle {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.song-toggle:disabled { cursor: default; opacity: 1; }
+
+.song-toggle:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+.card-head .song-toggle { margin-bottom: 0; }
+
+.song-body { margin-top: 0.5rem; }
+
+.song-body .lyric { margin: 0.2rem 0 0.7rem; }
+
+.song-body .btn { margin-top: 0.2rem; }
+
 
 .table-wrap { overflow-x: auto; }
 
