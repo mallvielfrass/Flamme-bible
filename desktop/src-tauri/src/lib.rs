@@ -1,3 +1,4 @@
+mod ai_http;
 mod bible;
 mod config;
 mod groups;
@@ -989,6 +990,47 @@ fn finish_close(window: tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn ai_http(
+    method: String,
+    path: String,
+    body: Option<String>,
+) -> Result<ai_http::Reply, String> {
+    let (_, cfg) = load_config()?;
+    if cfg.token.is_empty() {
+        return Ok(ai_http::Reply {
+            status: 401,
+            body: r#"{"error":"не авторизован"}"#.into(),
+            chunks: 0,
+        });
+    }
+    ai_http::exchange(&cfg.server_url, &cfg.token, &method, &path, body).await
+}
+
+#[tauri::command]
+async fn ai_http_stream(
+    app: tauri::AppHandle,
+    id: String,
+    method: String,
+    path: String,
+    body: Option<String>,
+) -> Result<ai_http::Reply, String> {
+    let (_, cfg) = load_config()?;
+    if cfg.token.is_empty() {
+        return Ok(ai_http::Reply {
+            status: 401,
+            body: r#"{"error":"не авторизован"}"#.into(),
+            chunks: 0,
+        });
+    }
+    ai_http::stream(app, &cfg.server_url, &cfg.token, &id, &method, &path, body).await
+}
+
+#[tauri::command]
+fn ai_http_cancel(id: String) {
+    ai_http::cancel(&id);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1049,6 +1091,9 @@ pub fn run() {
             plan_tab::plans_find_songs,
             bible_module_links,
             sync_bible_modules,
+            ai_http,
+            ai_http_stream,
+            ai_http_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("окно не открылось");

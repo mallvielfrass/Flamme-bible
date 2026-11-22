@@ -3,6 +3,9 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    dedupe: ["vue"],
+  },
   clearScreen: false,
   server: {
     port: 1420,

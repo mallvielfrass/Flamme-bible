@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { listen } from "@tauri-apps/api/event";
+import AiChat from "./components/AiChat.vue";
 import CloseDialog from "./components/CloseDialog.vue";
 import ConflictModal from "./components/ConflictModal.vue";
 import LoginView from "./components/LoginView.vue";
@@ -12,7 +13,7 @@ import UpdatesTab from "./updates/UpdatesTab.vue";
 import { api, type BibleLink, type Dimension, type Preview, type Progress, type Scan, type Settings, type SongRow } from "./commands";
 import { adoptionKey, decisionsFrom, groupKey, hasUnsyncedChanges, planKey, songKey, syncReady, type Choice } from "./syncState";
 
-const tab = ref<"sync" | "plans" | "updates">(
+const tab = ref<"sync" | "plans" | "updates" | "ai">(
   import.meta.env.DEV && new URLSearchParams(location.search).has("updates-preview") ? "updates" : "sync",
 );
 const ready = ref(false);
@@ -317,13 +318,14 @@ onMounted(() => {
     :busy="busy === 'auth'"
     @submit="enter"
   />
-  <div v-else class="shell">
+  <div v-else class="shell" :class="{ 'is-chat': tab === 'ai' }">
     <header class="topbar">
       <button class="brand" type="button" @click="tab = 'sync'">FlammeBible</button>
       <nav>
         <button class="nav-link" :class="{ on: tab === 'sync' }" type="button" @click="tab = 'sync'">Синхронизация</button>
         <button class="nav-link" :class="{ on: tab === 'plans' }" type="button" @click="tab = 'plans'">Планы</button>
         <button class="nav-link" :class="{ on: tab === 'updates' }" type="button" @click="tab = 'updates'">Обновление</button>
+        <button class="nav-link" :class="{ on: tab === 'ai' }" type="button" @click="tab = 'ai'">AI Чат</button>
         <div class="nav-end">
           <span v-if="settings.email" class="who">{{ settings.email }}</span>
           <button class="gear" :class="{ on: settingsOpen }" type="button" aria-label="Настройки" @click="settingsOpen = !settingsOpen">
@@ -362,7 +364,8 @@ onMounted(() => {
         </template>
       </SyncView>
       <PlansTab v-else-if="tab === 'plans'" :logged-in="settings.logged_in" />
-      <UpdatesTab v-else />
+      <UpdatesTab v-else-if="tab === 'updates'" />
+      <AiChat v-else :logged-in="settings.logged_in" />
     </main>
     <SettingsModal
       v-if="settingsOpen"
