@@ -169,6 +169,56 @@ a.btn { text-decoration: none; }
 
 .page-head { align-items: baseline; }
 
+.page-head.tight { align-items: center; }
+
+.page-head.tight h1 { margin-bottom: 0; }
+
+.page-tools { display: flex; gap: 0.45rem; flex: 0 0 auto; }
+
+.community-name { font-size: 1.45rem; margin: 0.35rem 0 0; }
+
+.community-meta { margin: 0.2rem 0 0.55rem; color: #6d6458; font-size: 0.95rem; }
+
+.members-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.2rem 0 0.4rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--navy);
+  font: inherit;
+  cursor: pointer;
+}
+
+.member-list { list-style: none; margin: 0; padding: 0; }
+
+.member-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0.35rem 0;
+}
+
+.invite-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  overflow-wrap: anywhere;
+}
+
+button.linkish {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .back { text-decoration: none; white-space: nowrap; }
 
 .split, .sync-grid.has-conflict {
