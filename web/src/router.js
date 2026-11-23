@@ -7,6 +7,7 @@ import SpacePage from './pages/SpacePage.vue'
 import AcceptInvitePage from './pages/AcceptInvitePage.vue'
 import SyncPage from './pages/SyncPage.vue'
 import SongbooksPage from './pages/SongbooksPage.vue'
+import BiblePage from './pages/BiblePage.vue'
 import PlansPage from './pages/PlansPage.vue'
 import AdminPage from './pages/AdminPage.vue'
 import AdminTab from './pages/AdminTab.vue'
@@ -21,6 +22,7 @@ export const router = createRouter({
     { path: '/catalog', component: SongbooksPage, meta: { public: true, catalog: true } },
     { path: '/download', component: DownloadPage, meta: { public: true } },
     { path: '/songbooks', component: SongbooksPage },
+    { path: '/bible', component: BiblePage },
     { path: '/plans', component: PlansPage },
     { path: '/ai', component: AiChatPage },
     { path: '/ai/:id', component: AiChatPage },

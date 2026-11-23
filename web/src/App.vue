@@ -18,6 +18,7 @@ const pendingAdmin = computed(() => {
 function on(name) {
   const path = route.path
   if (name === 'songs') return path === '/songbooks' || path === '/catalog'
+  if (name === 'bible') return path === '/bible'
   if (name === 'plans') return path === '/plans'
   if (name === 'ai') return path === '/ai' || path.startsWith('/ai/')
   if (name === 'spaces') return path === '/communities' || path.startsWith('/dimensions/')
@@ -36,7 +37,8 @@ async function logout() {
   <header class="topbar">
     <router-link class="brand" :to="songsTo">FlammeBible</router-link>
     <nav>
-      <router-link class="nav-link" :class="{ 'router-link-active': on('songs') }" :to="songsTo">Сборники и поиск</router-link>
+      <router-link class="nav-link" :class="{ 'router-link-active': on('songs') }" :to="songsTo">Сборники</router-link>
+      <router-link v-if="session.token" class="nav-link" :class="{ 'router-link-active': on('bible') }" to="/bible">Библия</router-link>
       <router-link v-if="session.token" class="nav-link" :class="{ 'router-link-active': on('plans') }" to="/plans">Планы</router-link>
       <router-link v-if="session.token" class="nav-link" :class="{ 'router-link-active': on('spaces') }" to="/communities">Общины</router-link>
       <router-link v-if="session.token" class="nav-link" :class="{ 'router-link-active': on('ai') }" to="/ai">AI Чат</router-link>
