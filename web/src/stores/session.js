@@ -26,6 +26,8 @@ export function toSpace(view) {
     email: view.email || '',
     confession: view.confession || '',
     description: view.description || '',
+    role: view.role || '',
+    memberCount: Number(view.member_count) || 0,
   }
 }
 
@@ -129,11 +131,7 @@ export const useSessionStore = defineStore('session', () => {
       }
     }
     try {
-      const list = await api('/api/dimensions', { token: token.value })
-      if (Array.isArray(list)) {
-        spaces.value = list.map(toSpace)
-        ensureCurrent()
-      }
+      await refreshSpaces()
     } catch (err) {
       if (err.status === 401) {
         await logout()
@@ -141,6 +139,14 @@ export const useSessionStore = defineStore('session', () => {
       }
     }
     await loadAdminSummary()
+    persist()
+  }
+
+  async function refreshSpaces() {
+    const list = await api('/api/dimensions', { token: token.value })
+    if (!Array.isArray(list)) return
+    spaces.value = list.map(toSpace)
+    ensureCurrent()
     persist()
   }
 
@@ -198,6 +204,6 @@ export const useSessionStore = defineStore('session', () => {
 
   return {
     token, userId, email, role, deviceId: deviceIdValue, dimensionId, currentId, communityId, spaces, current, adminSummary,
-    remember, select, register, login, logout, bootstrap, acceptInvite, loadAdminSummary,
+    remember, select, register, login, logout, bootstrap, refreshSpaces, acceptInvite, loadAdminSummary,
   }
 })

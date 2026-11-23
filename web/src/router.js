@@ -5,7 +5,6 @@ import LoginPage from './pages/LoginPage.vue'
 import RegisterPage from './pages/RegisterPage.vue'
 import SpacePage from './pages/SpacePage.vue'
 import AcceptInvitePage from './pages/AcceptInvitePage.vue'
-import SyncPage from './pages/SyncPage.vue'
 import SongbooksPage from './pages/SongbooksPage.vue'
 import BiblePage from './pages/BiblePage.vue'
 import PlansPage from './pages/PlansPage.vue'
@@ -38,7 +37,7 @@ export const router = createRouter({
     },
     { path: '/dimensions/:id', component: SpacePage },
     { path: '/dimensions/:id/invite', component: SpacePage },
-    { path: '/dimensions/:id/sync', component: SyncPage },
+    { path: '/dimensions/:id/sync', redirect: '/communities' },
     { path: '/invite/:token', component: AcceptInvitePage },
     { path: '/', redirect: () => homePath(useSessionStore()) },
   ],

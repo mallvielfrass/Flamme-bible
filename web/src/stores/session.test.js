@@ -71,8 +71,8 @@ describe('session', () => {
       if (path === '/api/me') return json({ user_id: 'u', email: 'a@example.com', role: 'user' })
       if (path === '/api/dimensions') {
         return json([
-          { id: 'dim', kind: 'personal', name: '', address: '', email: '', confession: '', description: '' },
-          { id: 'com', kind: 'community', name: 'Дом молитвы', address: '', email: '', confession: '', description: '' },
+          { id: 'dim', kind: 'personal', name: '', address: '', email: '', confession: '', description: '', role: 'admin', member_count: 1 },
+          { id: 'com', kind: 'community', name: 'Дом молитвы', address: '', email: '', confession: '', description: '', role: 'member', member_count: 3 },
         ])
       }
       throw new Error('down')
@@ -83,6 +83,8 @@ describe('session', () => {
     expect(session.currentId).toBe('dim')
     session.select('com')
     expect(session.current.name).toBe('Дом молитвы')
+    expect(session.current.role).toBe('member')
+    expect(session.current.memberCount).toBe(3)
     await session.logout()
     expect(session.token).toBe('')
     expect(session.spaces).toEqual([])

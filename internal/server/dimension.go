@@ -17,6 +17,8 @@ type dimensionView struct {
 	Email       string `json:"email"`
 	Confession  string `json:"confession"`
 	Description string `json:"description"`
+	Role        string `json:"role"`
+	MemberCount int    `json:"member_count"`
 }
 
 func createDimension(ctx context.Context, tx pgx.Tx, kind, name, address, email, confession, description, userID, role string) (string, error) {
@@ -103,6 +105,7 @@ func (s *Server) createCommunity(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, dimensionView{
 		ID: id, Kind: "community", Name: body.Name, Address: body.Address,
 		Email: body.Email, Confession: body.Confession, Description: body.Description,
+		Role: "admin", MemberCount: 1,
 	})
 }
 
@@ -117,18 +120,22 @@ func (s *Server) getDimension(w http.ResponseWriter, r *http.Request) {
 		writeMapped(w, errNotFound)
 		return
 	}
-	if _, err := s.membership(r.Context(), p.UserID, id); err != nil {
+	role, err := s.membership(r.Context(), p.UserID, id)
+	if err != nil {
 		writeMapped(w, err)
 		return
 	}
 	var view dimensionView
 	err = s.db.QueryRow(r.Context(), `
-		SELECT id::text, kind, name, address, email, confession, description FROM dimensions WHERE id = $1
-	`, id).Scan(&view.ID, &view.Kind, &view.Name, &view.Address, &view.Email, &view.Confession, &view.Description)
+		SELECT id::text, kind, name, address, email, confession, description,
+		       (SELECT count(*) FROM memberships x WHERE x.dimension_id = dimensions.id AND NOT x.excluded)
+		FROM dimensions WHERE id = $1
+	`, id).Scan(&view.ID, &view.Kind, &view.Name, &view.Address, &view.Email, &view.Confession, &view.Description, &view.MemberCount)
 	if err != nil {
 		writeMapped(w, err)
 		return
 	}
+	view.Role = role
 	writeJSON(w, http.StatusOK, view)
 }
 

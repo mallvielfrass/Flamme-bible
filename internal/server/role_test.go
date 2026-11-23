@@ -111,7 +111,7 @@ func TestCommunitiesRoutes(t *testing.T) {
 	}
 	var created dimensionView
 	mustJSON(t, raw, &created)
-	if created.Kind != "community" || created.Name != "Община" {
+	if created.Kind != "community" || created.Name != "Община" || created.Role != "admin" || created.MemberCount != 1 {
 		t.Fatalf("создание %+v", created)
 	}
 	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/communities", nil)
@@ -120,7 +120,7 @@ func TestCommunitiesRoutes(t *testing.T) {
 	}
 	var communities []dimensionView
 	mustJSON(t, raw, &communities)
-	if len(communities) != 1 || communities[0].ID != created.ID {
+	if len(communities) != 1 || communities[0].ID != created.ID || communities[0].Role != "admin" || communities[0].MemberCount != 1 {
 		t.Fatalf("общины %+v", communities)
 	}
 	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/dimensions", nil)
@@ -158,7 +158,24 @@ func TestCommunitiesRoutes(t *testing.T) {
 		t.Fatalf("список гостя %d %s", code, raw)
 	}
 	mustJSON(t, raw, &communities)
-	if len(communities) != 1 || communities[0].ID != created.ID {
+	if len(communities) != 1 || communities[0].ID != created.ID || communities[0].Role != "member" || communities[0].MemberCount != 2 {
 		t.Fatalf("гость не в общине %+v", communities)
+	}
+	code, raw = api(t, srv, owner.Token, http.MethodGet, "/api/communities", nil)
+	if code != http.StatusOK {
+		t.Fatalf("список после вступления %d %s", code, raw)
+	}
+	mustJSON(t, raw, &communities)
+	if communities[0].Role != "admin" || communities[0].MemberCount != 2 {
+		t.Fatalf("состав после вступления %+v", communities)
+	}
+	code, raw = api(t, srv, guest.Token, http.MethodGet, "/api/communities/"+created.ID, nil)
+	if code != http.StatusOK {
+		t.Fatalf("община гостя %d %s", code, raw)
+	}
+	var viewed dimensionView
+	mustJSON(t, raw, &viewed)
+	if viewed.Role != "member" || viewed.MemberCount != 2 {
+		t.Fatalf("просмотр гостя %+v", viewed)
 	}
 }
